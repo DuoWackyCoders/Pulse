@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patient Router</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app-container">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 60 24" aria-hidden="true">
+        <polyline points="0,12 14,12 18,3 24,21 30,8 34,16 38,12 60,12"
+          fill="none" stroke="url(#pulseGradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="pulseGradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="var(--pink)"/>
+            <stop offset="50%" stop-color="var(--peach)"/>
+            <stop offset="100%" stop-color="var(--lime)"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="brand-name">PULSE</span>
+    </div>
+
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="home" type="button">🏠 Home</button>
+      <button class="nav-tab" data-tab="schedule" type="button">📅 Schedule</button>
+      <button class="nav-tab" data-tab="csvcenter" type="button">🗂️ Client Center</button>
+    </nav>
+
+    <button id="themeToggle" class="theme-toggle" type="button">🌙 Dark mode</button>
+  </aside>
+
+  <main class="main-content">
+
+  <div id="tab-home" class="tab-panel">
+    <section class="card">
+      <h2 class="card-title">Welcome to PULSE</h2>
+      <p class="card-subtitle">Use the tabs on the left to manage your patient list, and soon, build daily routes and view the schedule calendar.</p>
+    </section>
+  </div>
+
+  <div id="tab-schedule" class="tab-panel" style="display:none;">
+    <section class="card">
+      <h2 class="card-title">Schedule</h2>
+      <p class="card-subtitle">Coming soon — the route builder and calendar will live here.</p>
+    </section>
+  </div>
+
+  <div id="tab-csvcenter" class="tab-panel" style="display:none;">
+
+  <div class="route-ribbon" aria-hidden="true">
+    <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
+      <path d="M0,14 Q125,0 250,14 T500,14 T750,14 T1000,14"
+            fill="none" stroke="var(--pink)" stroke-width="2" stroke-dasharray="1,10" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <!-- UPLOAD CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Patient list</h2>
+        <p class="card-subtitle">Upload a CSV to get started. Columns: Name, Address, DOB, Coordinator (Provider and Notes optional).</p>
+      </div>
+    </div>
+
+    <div id="dropzone" class="dropzone" role="button" tabindex="0">
+      <p class="dz-title">Drop a CSV here, or click to choose a file</p>
+      <p class="dz-sub">This replaces the current list — use "Add another CSV" below to append instead</p>
+    </div>
+    <input type="file" id="fileInput" accept=".csv">
+    <input type="file" id="addFileInput" accept=".csv">
+
+    <div class="upload-actions">
+      <button id="addCsvBtn" class="btn btn-secondary" type="button">➕ Add another CSV</button>
+      <button id="downloadCsvBtn" class="btn btn-secondary" type="button">⬇️ Download current list as CSV</button>
+      <button id="clearAllBtn" class="btn btn-ghost" type="button">Clear all</button>
+    </div>
+
+    <p id="statusLine" class="status-line"></p>
+  </section>
+
+  <!-- RADIUS / GROUPING CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Group by distance</h2>
+        <p class="card-subtitle">Patients within this radius of each other are auto-grouped. Override any patient's group in the table below.</p>
+      </div>
+    </div>
+    <div class="radius-control">
+      <span class="radius-value" id="radiusValue">5 mi</span>
+      <input type="range" id="radiusSlider" min="1" max="25" step="0.5" value="5">
+    </div>
+    <div id="groupSummary" style="margin-top:16px;"></div>
+  </section>
+
+  <!-- PATIENT TABLE CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">All patients</h2>
+        <p class="card-subtitle">Group assignment updates automatically as you add patients or change the radius.</p>
+      </div>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+      <p>No patients yet.</p>
+      <p>Upload a CSV above to get started.</p>
+    </div>
+
+    <div id="tableWrap" class="table-wrap" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Address</th>
+            <th>DOB</th>
+            <th>Coordinator</th>
+            <th>Group</th>
+            <th>Override</th>
+          </tr>
+        </thead>
+        <tbody id="patientTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  </div>
+
+  </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
