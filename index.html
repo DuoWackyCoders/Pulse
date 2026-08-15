@@ -49,9 +49,64 @@
 
   <div id="tab-schedule" class="tab-panel" style="display:none;">
     <section class="card">
-      <h2 class="card-title">Schedule</h2>
-      <p class="card-subtitle">Coming soon — the route builder and calendar will live here.</p>
+      <h2 class="card-title">Build today's route</h2>
+      <p class="card-subtitle">Pick a group, set how many stops, and generate an optimized order. Drive times are straight-line estimates.</p>
+
+      <div class="schedule-grid">
+        <label class="field">Starting address (home base)
+          <input type="text" id="startAddress" placeholder="e.g. 123 Office Dr, Plano TX">
+        </label>
+        <label class="field">Group
+          <select id="groupSelect"></select>
+        </label>
+        <label class="field">Stops today
+          <input type="number" id="stopCount" min="1" value="8">
+        </label>
+        <label class="field">Start time
+          <input type="time" id="startTime" value="08:00">
+        </label>
+        <label class="field">Visit duration (min, default)
+          <input type="number" id="visitDuration" min="1" value="15">
+        </label>
+        <label class="field">Max hours before warning
+          <input type="number" id="maxHours" min="1" step="0.5" value="7">
+        </label>
+      </div>
+
+      <button id="generateRouteBtn" class="btn btn-primary" type="button" style="margin-top:16px;">Generate Route</button>
+      <p id="scheduleStatus" class="status-line"></p>
     </section>
+
+    <section class="card" id="routeBuilderCard" style="display:none;">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Today's route</h2>
+          <p class="card-subtitle">Drag patients between columns, or drag to reorder within a column. Times recalculate automatically.</p>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="col">
+          <h3>Scheduled (<span id="scheduledCount">0</span>)</h3>
+          <ul id="scheduledList" class="drag-list" data-list="scheduled"></ul>
+        </div>
+        <div class="col">
+          <h3>Leftover (<span id="leftoverCount">0</span>)</h3>
+          <ul id="leftoverList" class="drag-list" data-list="leftover"></ul>
+        </div>
+      </div>
+      <button id="approveScheduleBtn" class="btn btn-primary" type="button" style="margin-top:18px;">✅ Approve schedule</button>
+    </section>
+  </div>
+
+  <div id="overageModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 class="card-title">Heads up</h3>
+      <p id="overageText"></p>
+      <div class="modal-actions">
+        <button id="modalGoBack" class="btn btn-secondary" type="button">Go Back</button>
+        <button id="modalApprove" class="btn btn-primary" type="button">Approved</button>
+      </div>
+    </div>
   </div>
 
   <div id="tab-clients" class="tab-panel" style="display:none;">
@@ -146,4 +201,3 @@
 <script src="script.js"></script>
 </body>
 </html>
-
