@@ -407,6 +407,131 @@ input[type="range"] {
 .status-line.error { color: var(--pink-deep); }
 
 /* ============================================
+   SCHEDULE / ROUTE BUILDER
+   ============================================ */
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.field input,
+.field select {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+}
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--pink-deep);
+  outline-offset: 1px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 640px) {
+  .two-col { grid-template-columns: 1fr; }
+}
+
+.col h3 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  margin: 0 0 10px;
+}
+
+.drag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 60px;
+  background: var(--surface-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drag-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: grab;
+  font-size: 0.85rem;
+  box-shadow: var(--shadow);
+}
+.drag-item:active { cursor: grabbing; }
+.drag-item.dragging { opacity: 0.4; }
+
+.drag-item .di-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+.drag-item .di-meta {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  margin-top: 3px;
+}
+.drag-item .di-time {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--pink-deep);
+  font-size: 0.85rem;
+}
+
+/* ============================================
+   MODAL
+   ============================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+
+.modal-box {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow-lift);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 
