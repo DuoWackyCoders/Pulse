@@ -8,6 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 <div class="app-container">
@@ -54,8 +56,17 @@
 
       <div class="schedule-grid">
         <label class="field">Starting address (home base)
-          <input type="text" id="startAddress" placeholder="e.g. 123 Office Dr, Plano TX">
+          <select id="startAddressSelect">
+            <option value="">+ Add new address...</option>
+          </select>
         </label>
+        <div id="newAddressForm" class="field" style="display:none; grid-column: 1 / -1;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <input type="text" id="newAddressLabel" placeholder="Label (e.g. Office)" style="flex:1; min-width:140px;">
+            <input type="text" id="newAddressText" placeholder="Full address" style="flex:2; min-width:200px;">
+            <button id="saveNewAddressBtn" class="btn btn-secondary" type="button">Save address</button>
+          </div>
+        </div>
         <label class="field">Group
           <select id="groupSelect"></select>
         </label>
@@ -84,6 +95,7 @@
           <p class="card-subtitle">Drag patients between columns, or drag to reorder within a column. Times recalculate automatically.</p>
         </div>
       </div>
+      <div id="routeMap" class="route-map"></div>
       <div class="two-col">
         <div class="col">
           <h3>Scheduled (<span id="scheduledCount">0</span>)</h3>
