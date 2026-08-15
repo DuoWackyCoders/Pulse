@@ -410,11 +410,64 @@ function handleFile(file, mode) {
    ROUTE BUILDER (Schedule tab)
    ============================================ */
 const AVG_MPH = 25; // straight-line estimate assumption for suburban driving
+const START_ADDR_KEY = 'patientRouter.startAddresses.v1';
 let startCoords = null;
 let scheduledPatients = [];
 let leftoverPatients = [];
 let draggedId = null;
 let draggedFrom = null;
+
+function loadStartAddresses() {
+  try {
+    const raw = localStorage.getItem(START_ADDR_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveStartAddresses(list) {
+  localStorage.setItem(START_ADDR_KEY, JSON.stringify(list));
+}
+
+function populateStartAddressSelect() {
+  const sel = document.getElementById('startAddressSelect');
+  if (!sel) return;
+  const saved = loadStartAddresses();
+  const current = sel.value;
+  sel.innerHTML = '<option value="">+ Add new address...</option>' +
+    saved.map(a => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.address)}</option>`).join('');
+  if (saved.some(a => a.id === current)) sel.value = current;
+  else if (saved.length) sel.value = saved[0].id;
+  updateAddressFormVisibility();
+}
+
+function updateAddressFormVisibility() {
+  const sel = document.getElementById('startAddressSelect');
+  const form = document.getElementById('newAddressForm');
+  if (sel && form) form.style.display = sel.value === '' ? 'flex' : 'none';
+}
+
+async function handleSaveNewAddress() {
+  const label = document.getElementById('newAddressLabel').value.trim() || 'Home base';
+  const address = document.getElementById('newAddressText').value.trim();
+  if (!address) { setScheduleStatus('Enter an address to save.', 'error'); return; }
+
+  setScheduleStatus('Looking up that address...', '');
+  try {
+    const coords = await geocodeAddress(address);
+    if (!coords) { setScheduleStatus('Could not find that address.', 'error'); return; }
+    const saved = loadStartAddresses();
+    const entry = { id: 'a_' + Date.now(), label, address, lat: coords.lat, lng: coords.lng };
+    saved.push(entry);
+    saveStartAddresses(saved);
+    populateStartAddressSelect();
+    document.getElementById('startAddressSelect').value = entry.id;
+    document.getElementById('newAddressForm').style.display = 'none';
+    document.getElementById('newAddressLabel').value = '';
+    document.getElementById('newAddressText').value = '';
+    setScheduleStatus('Address saved.', 'success');
+  } catch (e) {
+    setScheduleStatus('Error looking up that address.', 'error');
+  }
+}
 
 function populateGroupSelect() {
   const sel = document.getElementById('groupSelect');
@@ -450,20 +503,14 @@ async function generateRoute() {
   const groupSel = document.getElementById('groupSelect');
   const group = groupSel.value;
   const stopCount = parseInt(document.getElementById('stopCount').value, 10) || 0;
-  const startAddress = document.getElementById('startAddress').value.trim();
+  const startAddrId = document.getElementById('startAddressSelect').value;
 
   if (!group) { setScheduleStatus('Pick a group first — none found. Upload patients and set a radius on the Clients tab.', 'error'); return; }
-  if (!startAddress) { setScheduleStatus('Enter a starting address (home base).', 'error'); return; }
+  if (!startAddrId) { setScheduleStatus('Pick or add a starting address.', 'error'); return; }
 
-  setScheduleStatus('Looking up starting address...', '');
-  try {
-    const coords = await geocodeAddress(startAddress);
-    if (!coords) { setScheduleStatus('Could not find that starting address.', 'error'); return; }
-    startCoords = coords;
-  } catch (e) {
-    setScheduleStatus('Error looking up starting address.', 'error');
-    return;
-  }
+  const saved = loadStartAddresses().find(a => a.id === startAddrId);
+  if (!saved) { setScheduleStatus('That saved address could not be found — try re-adding it.', 'error'); return; }
+  startCoords = { lat: saved.lat, lng: saved.lng };
 
   const groupPatients = patients.filter(p => p.group === group && p.lat !== null && p.lng !== null);
   if (groupPatients.length === 0) {
@@ -606,6 +653,9 @@ function showOverageModal(hours, maxHours, onApprove, onGoBack) {
 function wireScheduleUI() {
   document.getElementById('generateRouteBtn').addEventListener('click', generateRoute);
 
+  document.getElementById('startAddressSelect').addEventListener('change', updateAddressFormVisibility);
+  document.getElementById('saveNewAddressBtn').addEventListener('click', handleSaveNewAddress);
+
   ['startTime', 'visitDuration', 'maxHours'].forEach(id => {
     document.getElementById(id).addEventListener('change', () => {
       if (scheduledPatients.length) recalcAndRender();
@@ -637,7 +687,7 @@ function switchTab(tabName) {
   const activeBtn = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
   if (activeBtn) activeBtn.classList.add('active');
 
-  if (tabName === 'schedule') populateGroupSelect();
+  if (tabName === 'schedule') { populateGroupSelect(); populateStartAddressSelect(); }
 }
 
 /* ============================================
