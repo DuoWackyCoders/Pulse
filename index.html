@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Patient Router</title>
+<title>PULSE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
 <div class="app-container">
@@ -30,6 +31,7 @@
     <nav class="nav-tabs">
       <button class="nav-tab active" data-tab="home" type="button">🏠 Home</button>
       <button class="nav-tab" data-tab="schedule" type="button">📅 Schedule</button>
+      <button class="nav-tab" data-tab="clients" type="button">👥 Clients</button>
       <button class="nav-tab" data-tab="csvcenter" type="button">🗂️ Client Center</button>
     </nav>
 
@@ -52,39 +54,7 @@
     </section>
   </div>
 
-  <div id="tab-csvcenter" class="tab-panel" style="display:none;">
-
-  <div class="route-ribbon" aria-hidden="true">
-    <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
-      <path d="M0,14 Q125,0 250,14 T500,14 T750,14 T1000,14"
-            fill="none" stroke="var(--pink)" stroke-width="2" stroke-dasharray="1,10" stroke-linecap="round"/>
-    </svg>
-  </div>
-
-  <!-- UPLOAD CARD -->
-  <section class="card">
-    <div class="card-header">
-      <div>
-        <h2 class="card-title">Patient list</h2>
-        <p class="card-subtitle">Upload a CSV to get started. Columns: Name, Address, DOB, Coordinator (Provider and Notes optional).</p>
-      </div>
-    </div>
-
-    <div id="dropzone" class="dropzone" role="button" tabindex="0">
-      <p class="dz-title">Drop a CSV here, or click to choose a file</p>
-      <p class="dz-sub">This replaces the current list — use "Add another CSV" below to append instead</p>
-    </div>
-    <input type="file" id="fileInput" accept=".csv">
-    <input type="file" id="addFileInput" accept=".csv">
-
-    <div class="upload-actions">
-      <button id="addCsvBtn" class="btn btn-secondary" type="button">➕ Add another CSV</button>
-      <button id="downloadCsvBtn" class="btn btn-secondary" type="button">⬇️ Download current list as CSV</button>
-      <button id="clearAllBtn" class="btn btn-ghost" type="button">Clear all</button>
-    </div>
-
-    <p id="statusLine" class="status-line"></p>
-  </section>
+  <div id="tab-clients" class="tab-panel" style="display:none;">
 
   <!-- RADIUS / GROUPING CARD -->
   <section class="card">
@@ -134,9 +104,46 @@
 
   </div>
 
+  <div id="tab-csvcenter" class="tab-panel" style="display:none;">
+
+  <div class="route-ribbon" aria-hidden="true">
+    <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
+      <path d="M0,14 Q125,0 250,14 T500,14 T750,14 T1000,14"
+            fill="none" stroke="var(--pink)" stroke-width="2" stroke-dasharray="1,10" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <!-- UPLOAD CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Patient list</h2>
+        <p class="card-subtitle">Upload a CSV to get started. Columns: Name, Address, DOB, Coordinator (Provider and Notes optional).</p>
+      </div>
+    </div>
+
+    <div id="dropzone" class="dropzone" role="button" tabindex="0">
+      <p class="dz-title">Drop a CSV here, or click to choose a file</p>
+      <p class="dz-sub">This replaces the current list — use "Add another CSV" below to append instead</p>
+    </div>
+    <input type="file" id="fileInput" accept=".csv">
+    <input type="file" id="addFileInput" accept=".csv">
+
+    <div class="upload-actions">
+      <button id="addCsvBtn" class="btn btn-secondary" type="button">➕ Add another CSV</button>
+      <button id="downloadCsvBtn" class="btn btn-secondary" type="button">⬇️ Download current list as CSV</button>
+      <button id="clearAllBtn" class="btn btn-ghost" type="button">Clear all</button>
+    </div>
+
+    <p id="statusLine" class="status-line"></p>
+  </section>
+
+  </div>
+
   </main>
 </div>
 
 <script src="script.js"></script>
 </body>
 </html>
+
