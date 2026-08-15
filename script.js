@@ -1,450 +1,550 @@
 /* ============================================
-   STORAGE KEYS
+   DESIGN TOKENS
+   Light: peach + pink + lime + white
+   Dark:  "BlackPink" — near-black with neon pink/lime
    ============================================ */
-const STORAGE_KEY = 'patientRouter.patients.v1';
-const RADIUS_KEY = 'patientRouter.radius.v1';
-const THEME_KEY = 'patientRouter.theme.v1';
 
-/* ============================================
-   STATE
-   ============================================ */
-let patients = loadPatients();     // array of patient objects
-let radiusMiles = loadRadius();    // clustering radius
+:root {
+  /* Light mode */
+  --bg: #FFF8F3;
+  --surface: #FFFFFF;
+  --surface-alt: #FFF1E6;
+  --border: #F3DCC9;
 
-/* ============================================
-   THEME
-   ============================================ */
-function loadTheme() {
-  return localStorage.getItem(THEME_KEY) || 'light';
-}
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem(THEME_KEY, theme);
-  const btn = document.getElementById('themeToggle');
-  if (btn) btn.textContent = theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
-}
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') || 'light';
-  applyTheme(current === 'dark' ? 'light' : 'dark');
-}
+  --peach: #FFD3B6;
+  --peach-deep: #FFB88C;
+  --pink: #F7A8C4;
+  --pink-deep: #EE7EAB;
+  --lime: #BFE6A6;
+  --lime-deep: #9AD67C;
 
-/* ============================================
-   PERSISTENCE
-   ============================================ */
-function loadPatients() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error('Failed to load patients from storage', e);
-    return [];
-  }
-}
-function savePatients() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
-  } catch (e) {
-    console.error('Failed to save patients to storage', e);
-    setStatus('Could not save — your browser storage may be full.', 'error');
-  }
-}
-function loadRadius() {
-  const raw = localStorage.getItem(RADIUS_KEY);
-  return raw ? parseFloat(raw) : 5;
-}
-function saveRadius() {
-  localStorage.setItem(RADIUS_KEY, String(radiusMiles));
+  --text: #4A3540;
+  --text-soft: #8A7480;
+  --text-on-accent: #3A2530;
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  --shadow: 0 4px 16px rgba(174, 118, 98, 0.12);
+  --shadow-lift: 0 8px 28px rgba(174, 118, 98, 0.18);
+
+  --font-display: 'Fredoka', sans-serif;
+  --font-body: 'Nunito Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* ============================================
-   CSV PARSING (handles quoted fields with commas)
-   ============================================ */
-function parseCSV(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let inQuotes = false;
+[data-theme="dark"] {
+  --bg: #150F18;
+  --surface: #221A26;
+  --surface-alt: #2B2130;
+  --border: #3A2C42;
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const next = text[i + 1];
+  --peach: #E88B6B;
+  --peach-deep: #F2A17E;
+  --pink: #FF6FA8;
+  --pink-deep: #FF8FBC;
+  --lime: #A6F26A;
+  --lime-deep: #C2FF8F;
 
-    if (inQuotes) {
-      if (char === '"' && next === '"') { field += '"'; i++; }
-      else if (char === '"') { inQuotes = false; }
-      else { field += char; }
-    } else {
-      if (char === '"') inQuotes = true;
-      else if (char === ',') { row.push(field); field = ''; }
-      else if (char === '\n' || char === '\r') {
-        if (char === '\r' && next === '\n') i++;
-        row.push(field); field = '';
-        if (row.some(f => f.trim() !== '')) rows.push(row);
-        row = [];
-      } else { field += char; }
-    }
-  }
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    if (row.some(f => f.trim() !== '')) rows.push(row);
-  }
-  return rows;
+  --text: #F5E9F0;
+  --text-soft: #B79AB0;
+  --text-on-accent: #1E1420;
+
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 10px 32px rgba(255, 111, 168, 0.15);
 }
 
-function csvToPatients(text) {
-  const rows = parseCSV(text);
-  if (rows.length < 2) return [];
+* { box-sizing: border-box; }
 
-  const header = rows[0].map(h => h.trim().toLowerCase());
-  const idx = {
-    name: header.findIndex(h => h.includes('name')),
-    address: header.findIndex(h => h.includes('address')),
-    dob: header.findIndex(h => h.includes('dob') || h.includes('birth')),
-    coordinator: header.findIndex(h => h.includes('coordinator')),
-    provider: header.findIndex(h => h.includes('provider')),
-    notes: header.findIndex(h => h.includes('note')),
-  };
-
-  const out = [];
-  for (let r = 1; r < rows.length; r++) {
-    const cols = rows[r];
-    const name = idx.name >= 0 ? (cols[idx.name] || '').trim() : '';
-    const address = idx.address >= 0 ? (cols[idx.address] || '').trim() : '';
-    if (!name && !address) continue;
-
-    out.push({
-      id: 'p_' + Date.now() + '_' + r + '_' + Math.random().toString(36).slice(2, 7),
-      name,
-      address,
-      dob: idx.dob >= 0 ? (cols[idx.dob] || '').trim() : '',
-      coordinator: idx.coordinator >= 0 ? (cols[idx.coordinator] || '').trim() : '',
-      provider: idx.provider >= 0 ? (cols[idx.provider] || '').trim() : '',
-      notes: idx.notes >= 0 ? (cols[idx.notes] || '').trim() : '',
-      lat: null,
-      lng: null,
-      group: null,
-      manualGroup: false,
-    });
-  }
-  return out;
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
-function patientsToCSV(list) {
-  const header = ['Name', 'Address', 'DOB', 'Coordinator', 'Provider', 'Notes', 'Group'];
-  const escape = (v) => {
-    const s = (v ?? '').toString();
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  };
-  const lines = [header.join(',')];
-  for (const p of list) {
-    lines.push([p.name, p.address, p.dob, p.coordinator, p.provider, p.notes, p.group || '']
-      .map(escape).join(','));
-  }
-  return lines.join('\n');
+body {
+  min-height: 100vh;
 }
 
 /* ============================================
-   GEOCODING (OpenStreetMap Nominatim — free, rate-limited)
+   LAYOUT
    ============================================ */
-async function geocodeAddress(address) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!res.ok) throw new Error('Geocoding request failed');
-  const data = await res.json();
-  if (!data.length) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
 }
 
-// Respect Nominatim's ~1 req/sec limit
-function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
 
-async function geocodeAllPending() {
-  const pending = patients.filter(p => p.address && (p.lat === null || p.lng === null));
-  if (pending.length === 0) return;
+.main-content {
+  flex: 1;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+  width: 100%;
+}
 
-  setStatus(`Geocoding ${pending.length} address(es)... this may take a moment.`, '');
-  for (let i = 0; i < pending.length; i++) {
-    const p = pending[i];
-    try {
-      const coords = await geocodeAddress(p.address);
-      if (coords) { p.lat = coords.lat; p.lng = coords.lng; }
-      else { p.geocodeFailed = true; }
-    } catch (e) {
-      console.error('Geocode failed for', p.address, e);
-      p.geocodeFailed = true;
-    }
-    setStatus(`Geocoding ${i + 1} of ${pending.length}...`, '');
-    await sleep(1100); // stay under 1 req/sec
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.nav-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.nav-tab {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.nav-tab:hover { background: var(--surface-alt); color: var(--text); }
+.nav-tab.active {
+  background: linear-gradient(135deg, var(--pink) 0%, var(--peach) 100%);
+  color: var(--text-on-accent);
+}
+
+@media (max-width: 768px) {
+  .app-container { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
   }
-  savePatients();
-  regroup();
-  setStatus('Geocoding complete.', 'success');
+  .nav-tabs { flex-direction: row; }
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
+
+/* Route-ribbon signature: a winding dotted path used as a divider/motif */
+.route-ribbon {
+  height: 28px;
+  width: 100%;
+  margin: 4px 0 32px;
+}
+.route-ribbon svg { width: 100%; height: 100%; display: block; }
+
+/* ============================================
+   THEME TOGGLE
+   ============================================ */
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+  transition: all 0.2s ease;
+}
+.theme-toggle:hover { box-shadow: var(--shadow); }
+.theme-toggle:focus-visible { outline: 2px solid var(--pink-deep); outline-offset: 2px; }
+
+/* ============================================
+   CARDS / SECTIONS
+   ============================================ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.card-subtitle {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+  margin: 4px 0 0;
 }
 
 /* ============================================
-   CLUSTERING (greedy radius-based grouping)
+   UPLOAD ZONE
    ============================================ */
-function haversineMiles(lat1, lng1, lat2, lng2) {
-  const R = 3958.8; // miles
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
+
+.dropzone {
+  border: 2px dashed var(--peach-deep);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  padding: 36px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.dropzone:hover, .dropzone.dragover {
+  border-color: var(--pink-deep);
+  background: linear-gradient(135deg, var(--peach) 0%, var(--pink) 100%);
+}
+.dropzone.dragover .dz-title,
+.dropzone:hover .dz-title { color: var(--text-on-accent); }
+
+.dz-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin: 0 0 6px;
+}
+.dz-sub {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  margin: 0;
 }
 
-function groupLetter(n) {
-  // 0 -> A, 1 -> B ... 25 -> Z, 26 -> AA, etc.
-  let s = '';
-  n = n + 1;
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    s = String.fromCharCode(65 + rem) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
+.dropzone.dragover .dz-sub,
+.dropzone:hover .dz-sub { color: var(--text-on-accent); opacity: 0.85; }
 
-function regroup() {
-  // Keep manually-assigned patients fixed; auto-cluster the rest.
-  const manual = patients.filter(p => p.manualGroup && p.group);
-  const auto = patients.filter(p => !p.manualGroup && p.lat !== null && p.lng !== null);
-  const noCoords = patients.filter(p => p.lat === null || p.lng === null);
+input[type="file"] { display: none; }
 
-  const usedLetters = new Set(manual.map(p => p.group));
-  const clusters = []; // { letter, members: [] }
-  let nextIdx = 0;
-  const nextFreeLetter = () => {
-    let letter;
-    do { letter = groupLetter(nextIdx++); } while (usedLetters.has(letter));
-    usedLetters.add(letter);
-    return letter;
-  };
-
-  const unclustered = [...auto];
-  while (unclustered.length) {
-    const seed = unclustered.shift();
-    const letter = nextFreeLetter();
-    const members = [seed];
-    for (let i = unclustered.length - 1; i >= 0; i--) {
-      const candidate = unclustered[i];
-      const closeToAny = members.some(m =>
-        haversineMiles(m.lat, m.lng, candidate.lat, candidate.lng) <= radiusMiles);
-      if (closeToAny) {
-        members.push(candidate);
-        unclustered.splice(i, 1);
-      }
-    }
-    seed.group = letter;
-    members.forEach(m => { m.group = letter; });
-  }
-
-  noCoords.forEach(p => { if (!p.manualGroup) p.group = null; });
-
-  savePatients();
-  renderTable();
-  renderGroupSummary();
+.upload-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
 }
 
 /* ============================================
-   RENDERING
+   BUTTONS
    ============================================ */
-function setStatus(msg, kind) {
-  const el = document.getElementById('statusLine');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'status-line' + (kind ? ' ' + kind : '');
+
+.btn {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.88rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 11px 18px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn:focus-visible { outline: 2px solid var(--pink-deep); outline-offset: 2px; }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--pink) 0%, var(--pink-deep) 100%);
+  color: var(--text-on-accent);
+}
+.btn-primary:hover { box-shadow: var(--shadow-lift); }
+
+.btn-secondary {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.btn-secondary:hover { background: var(--peach); color: var(--text-on-accent); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--peach-deep); }
+
+/* ============================================
+   TABLE
+   ============================================ */
+
+.table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
 }
 
-function renderTable() {
-  const tbody = document.getElementById('patientTableBody');
-  const emptyState = document.getElementById('emptyState');
-  const tableWrap = document.getElementById('tableWrap');
-  if (!tbody) return;
-
-  if (patients.length === 0) {
-    tableWrap.style.display = 'none';
-    emptyState.style.display = 'block';
-    return;
-  }
-  tableWrap.style.display = 'block';
-  emptyState.style.display = 'none';
-
-  tbody.innerHTML = '';
-  patients.forEach(p => {
-    const tr = document.createElement('tr');
-
-    const groupLabel = p.group || 'unassigned';
-    tr.innerHTML = `
-      <td>${escapeHtml(p.name)}</td>
-      <td>${escapeHtml(p.address)}${p.geocodeFailed ? ' <span style="color:var(--pink-deep)">(not found)</span>' : ''}</td>
-      <td>${escapeHtml(p.dob)}</td>
-      <td>${escapeHtml(p.coordinator)}</td>
-      <td><span class="group-pill" data-group="${groupLabel === 'unassigned' ? 'unassigned' : (groupLabel.charCodeAt(0) - 65) % 3 === 0 ? 'A' : (groupLabel.charCodeAt(0) - 65) % 3 === 1 ? 'B' : 'C'}">${escapeHtml(groupLabel)}</span></td>
-      <td>
-        <select class="group-select" data-id="${p.id}">
-          <option value="">Auto</option>
-          ${availableGroupLetters().map(l => `<option value="${l}" ${p.manualGroup && p.group === l ? 'selected' : ''}>${l}</option>`).join('')}
-        </select>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  tbody.querySelectorAll('.group-select').forEach(sel => {
-    sel.addEventListener('change', (e) => {
-      const id = e.target.getAttribute('data-id');
-      const patient = patients.find(p => p.id === id);
-      if (!patient) return;
-      if (e.target.value === '') {
-        patient.manualGroup = false;
-      } else {
-        patient.manualGroup = true;
-        patient.group = e.target.value;
-      }
-      regroup();
-    });
-  });
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
 }
 
-function availableGroupLetters() {
-  const letters = new Set(patients.map(p => p.group).filter(Boolean));
-  // always offer at least A, B, C as options even if not yet created
-  ['A', 'B', 'C'].forEach(l => letters.add(l));
-  return Array.from(letters).sort();
+thead th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+  background: var(--surface-alt);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
 }
 
-function renderGroupSummary() {
-  const el = document.getElementById('groupSummary');
-  if (!el) return;
-  const counts = {};
-  patients.forEach(p => {
-    const key = p.group || 'Unassigned';
-    counts[key] = (counts[key] || 0) + 1;
-  });
-  const entries = Object.entries(counts).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = entries.map(([g, c]) =>
-    `<span class="group-pill" data-group="${g === 'Unassigned' ? 'unassigned' : 'A'}" style="margin-right:8px;">${g} — ${c}</span>`
-  ).join('');
+tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
 }
 
-function escapeHtml(str) {
-  return (str ?? '').toString()
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface-alt); }
+
+.group-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+.group-pill[data-group="A"] { background: var(--pink); color: var(--text-on-accent); }
+.group-pill[data-group="B"] { background: var(--peach); color: var(--text-on-accent); }
+.group-pill[data-group="C"] { background: var(--lime); color: var(--text-on-accent); }
+.group-pill[data-group="unassigned"] { background: var(--surface-alt); color: var(--text-soft); border: 1px solid var(--border); }
+
+/* ============================================
+   RADIUS CONTROL
+   ============================================ */
+
+.radius-control {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.radius-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  min-width: 64px;
+}
+
+input[type="range"] {
+  flex: 1;
+  min-width: 160px;
+  accent-color: var(--pink-deep);
 }
 
 /* ============================================
-   UPLOAD HANDLING
+   EMPTY STATE
    ============================================ */
-function handleFile(file, mode) {
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const text = e.target.result;
-    const parsed = csvToPatients(text);
-    if (parsed.length === 0) {
-      setStatus('No valid rows found in that CSV. Check the column headers (Name, Address, DOB...).', 'error');
-      return;
-    }
-    if (mode === 'replace') {
-      patients = parsed;
-    } else {
-      patients = patients.concat(parsed);
-    }
-    savePatients();
-    renderTable();
-    renderGroupSummary();
-    setStatus(`Loaded ${parsed.length} patient(s). Geocoding addresses next...`, 'success');
-    await geocodeAllPending();
-  };
-  reader.onerror = () => setStatus('Could not read that file.', 'error');
-  reader.readAsText(file);
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-soft);
+}
+.empty-state p { margin: 4px 0; }
+
+/* ============================================
+   STATUS / TOAST
+   ============================================ */
+
+.status-line {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  margin-top: 10px;
+}
+.status-line.success { color: var(--lime-deep); }
+.status-line.error { color: var(--pink-deep); }
+
+/* ============================================
+   SCHEDULE / ROUTE BUILDER
+   ============================================ */
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.field input,
+.field select {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+}
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--pink-deep);
+  outline-offset: 1px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 640px) {
+  .two-col { grid-template-columns: 1fr; }
+}
+
+.col h3 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  margin: 0 0 10px;
+}
+
+.drag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 60px;
+  background: var(--surface-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drag-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: grab;
+  font-size: 0.85rem;
+  box-shadow: var(--shadow);
+}
+.drag-item:active { cursor: grabbing; }
+.drag-item.dragging { opacity: 0.4; }
+
+.drag-item .di-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+.drag-item .di-meta {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  margin-top: 3px;
+}
+.drag-item .di-time {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--pink-deep);
+  font-size: 0.85rem;
 }
 
 /* ============================================
-   TAB NAVIGATION
+   MODAL
    ============================================ */
-function switchTab(tabName) {
-  document.querySelectorAll('.tab-panel').forEach(el => { el.style.display = 'none'; });
-  const target = document.getElementById('tab-' + tabName);
-  if (target) target.style.display = 'block';
 
-  document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
-  const activeBtn = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
-  if (activeBtn) activeBtn.classList.add('active');
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+
+.modal-box {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow-lift);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
 }
 
 /* ============================================
-   INIT
+   RESPONSIVE
    ============================================ */
-document.addEventListener('DOMContentLoaded', () => {
-  applyTheme(loadTheme());
-  document.getElementById('themeToggle').addEventListener('click', toggleTheme);
 
-  document.querySelectorAll('.nav-tab').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.getAttribute('data-tab')));
-  });
+@media (max-width: 640px) {
+  .card { padding: 20px; }
+  .card-header { flex-direction: column; align-items: flex-start; }
+  thead th, tbody td { padding: 10px 10px; font-size: 0.8rem; }
+}
 
-  const radiusSlider = document.getElementById('radiusSlider');
-  const radiusValue = document.getElementById('radiusValue');
-  radiusSlider.value = radiusMiles;
-  radiusValue.textContent = radiusMiles + ' mi';
-  radiusSlider.addEventListener('input', () => {
-    radiusMiles = parseFloat(radiusSlider.value);
-    radiusValue.textContent = radiusMiles + ' mi';
-  });
-  radiusSlider.addEventListener('change', () => {
-    saveRadius();
-    regroup();
-  });
+/* ============================================
+   REDUCED MOTION
+   ============================================ */
 
-  const dropzone = document.getElementById('dropzone');
-  const fileInput = document.getElementById('fileInput');
-  const addFileInput = document.getElementById('addFileInput');
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
-  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file, 'replace');
-  });
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) handleFile(e.target.files[0], 'replace');
-  });
-  addFileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) handleFile(e.target.files[0], 'append');
-  });
-
-  document.getElementById('downloadCsvBtn').addEventListener('click', () => {
-    if (patients.length === 0) { setStatus('Nothing to download yet.', 'error'); return; }
-    const csv = patientsToCSV(patients);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'patients.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  document.getElementById('addCsvBtn').addEventListener('click', () => addFileInput.click());
-
-  document.getElementById('clearAllBtn').addEventListener('click', () => {
-    if (!confirm('This will remove all patients from this browser. Continue?')) return;
-    patients = [];
-    savePatients();
-    renderTable();
-    renderGroupSummary();
-    setStatus('Cleared.', '');
-  });
-
-  renderTable();
-  renderGroupSummary();
-  if (patients.some(p => p.lat === null || p.lng === null)) {
-    geocodeAllPending();
-  }
-});
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
