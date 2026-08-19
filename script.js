@@ -700,6 +700,7 @@ function handleFile(file, mode) {
    ============================================ */
 let leafletMap = null;
 let leafletLayer = null;
+let lastRouteGeometry = null; // actual road-path coordinates from the last successful route fetch
 
 function ensureMap() {
   if (leafletMap) return;
@@ -741,7 +742,15 @@ function renderMap() {
   });
 
   const points = [[startCoords.lat, startCoords.lng], ...scheduledPatients.map(p => [p.lat, p.lng])];
-  L.polyline(points, { color: '#EE7EAB', weight: 3, dashArray: '1,8' }).addTo(leafletLayer);
+  if (lastRouteGeometry && lastRouteGeometry.length > 1) {
+    // Real road path from the routing service — solid line, hugs actual streets.
+    L.polyline(lastRouteGeometry, { color: '#EE7EAB', weight: 4, opacity: 0.85 }).addTo(leafletLayer);
+  } else {
+    // Fallback only: straight lines between stops, used when the routing
+    // service was unreachable. Dashed so it visually reads as an estimate,
+    // not an actual path.
+    L.polyline(points, { color: '#EE7EAB', weight: 3, dashArray: '1,8' }).addTo(leafletLayer);
+  }
 
   // Ghost pins: other patients not currently on today's route. Split into
   // eligible (pink — could be pulled in) vs. recently-visited/ineligible
@@ -1045,7 +1054,7 @@ async function generateRoute() {
    straight-line fallback if it's unreachable)
    ============================================ */
 async function fetchRouteLegs(startLat, startLng, stops) {
-  if (stops.length === 0) return [];
+  if (stops.length === 0) return { legs: [], geometry: null };
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000); // never hang more than 8s
   try {
@@ -1053,16 +1062,21 @@ async function fetchRouteLegs(startLat, startLng, stops) {
     // last leg gives us a real "arrive home" estimate too.
     const coordList = [[startLng, startLat], ...stops.map(s => [s.lng, s.lat]), [startLng, startLat]];
     const coordStr = coordList.map(c => c.join(',')).join(';');
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=false`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.code !== 'Ok' || !data.routes || !data.routes[0]) return null;
-    return data.routes[0].legs.map(leg => ({
+    const legs = data.routes[0].legs.map(leg => ({
       minutes: leg.duration / 60,
       miles: leg.distance / 1609.34
     }));
+    // GeoJSON gives [lng, lat] pairs; Leaflet wants [lat, lng].
+    const geometry = data.routes[0].geometry && data.routes[0].geometry.coordinates
+      ? data.routes[0].geometry.coordinates.map(c => [c[1], c[0]])
+      : null;
+    return { legs, geometry };
   } catch (e) {
     clearTimeout(timeoutId);
     console.error('Real-road routing unavailable (timed out or failed), falling back to straight-line estimate', e);
@@ -1080,8 +1094,13 @@ async function recalcAndRender() {
   const dayStartMinutes = cursorMinutes;
 
   let legs = null;
+  lastRouteGeometry = null;
   if (startCoords && scheduledPatients.length > 0) {
-    legs = await fetchRouteLegs(startCoords.lat, startCoords.lng, scheduledPatients);
+    const result = await fetchRouteLegs(startCoords.lat, startCoords.lng, scheduledPatients);
+    if (result) {
+      legs = result.legs;
+      lastRouteGeometry = result.geometry;
+    }
   }
   const usingRealRoads = !!legs;
 
@@ -1114,16 +1133,19 @@ async function recalcAndRender() {
 
   // Return-to-home leg, for the "arrive home" summary.
   let returnTripMinutes = 0;
+  let returnTripMiles = 0;
   if (startCoords && scheduledPatients.length > 0) {
     if (legs && legs[legs.length - 1]) {
       returnTripMinutes = legs[legs.length - 1].minutes;
+      returnTripMiles = legs[legs.length - 1].miles;
     } else {
       const last = scheduledPatients[scheduledPatients.length - 1];
-      returnTripMinutes = milesToMinutes(haversineMiles(last.lat, last.lng, startCoords.lat, startCoords.lng));
+      returnTripMiles = haversineMiles(last.lat, last.lng, startCoords.lat, startCoords.lng);
+      returnTripMinutes = milesToMinutes(returnTripMiles);
     }
   }
   const returnHomeMinutes = cursorMinutes + returnTripMinutes;
-  renderRouteSummary(dayStartMinutes, returnHomeMinutes, usingRealRoads);
+  renderRouteSummary(dayStartMinutes, returnHomeMinutes, usingRealRoads, returnTripMinutes, returnTripMiles);
 
   const totalHours = (cursorMinutes - dayStartMinutes) / 60;
   renderScheduleLists();
@@ -1151,12 +1173,13 @@ function renderScheduleLists() {
   attachDragHandlers();
 }
 
-function renderRouteSummary(startMinutes, returnHomeMinutes, usingRealRoads) {
+function renderRouteSummary(startMinutes, returnHomeMinutes, usingRealRoads, returnTripMinutes, returnTripMiles) {
   const el = document.getElementById('routeSummary');
   if (!el) return;
   if (scheduledPatients.length === 0) { el.innerHTML = ''; return; }
   el.innerHTML = `
     <span class="rs-item"><span class="rs-label">Start:</span> Home ${minutesToClock(startMinutes)}</span>
+    <span class="rs-item"><span class="rs-label">Return trip:</span> 🚗 ${Math.round(returnTripMinutes)} min / ${returnTripMiles.toFixed(1)} mi</span>
     <span class="rs-item"><span class="rs-label">Arrive home:</span> ${minutesToClock(returnHomeMinutes)}</span>
     <span class="rs-item"><span class="rs-label">Total day:</span> ${((returnHomeMinutes - startMinutes) / 60).toFixed(1)} hrs</span>
     <span class="rs-item" style="color:${usingRealRoads ? 'var(--lime-deep)' : 'var(--pink-deep)'};">${usingRealRoads ? '✓ real road times' : '⚠ straight-line estimate (routing service unreachable)'}</span>
@@ -1167,8 +1190,8 @@ function dragItemHtml(p, listName, index, showTime) {
   const highlightClass = p.justAdded ? ' highlight-new' : '';
   return `
     <li class="drag-item${highlightClass}" draggable="true" data-id="${p.id}" data-list="${listName}" data-index="${index}">
-      <div class="di-name">#${index + 1} ${escapeHtml(p.name)}</div>
-      <div class="di-meta">${escapeHtml(p.dob)} — ${escapeHtml(p.address)}${!showTime && p.group ? ` — Group ${escapeHtml(p.group)}` : ''}</div>
+      <div class="di-name">#${index + 1} ${escapeHtml(p.name)}${p.group ? ` <span style="color:var(--text-soft); font-weight:600; font-size:0.8em;">(Grp- ${escapeHtml(p.group)})</span>` : ''}</div>
+      <div class="di-meta">${escapeHtml(p.dob)} — ${escapeHtml(p.address)}</div>
       ${showTime && p.arrivalMinutes !== undefined ? `<div class="di-time">${minutesToClock(p.arrivalMinutes)}${p.travelMinutes ? ` <span style="color:var(--text-soft); font-weight:600;">(🚗 ${Math.round(p.travelMinutes)} min / ${p.travelMiles.toFixed(1)} mi)</span>` : ' <span style="color:var(--text-soft); font-weight:600;">(same address)</span>'}</div>` : ''}
     </li>
   `;
@@ -1772,4 +1795,3 @@ document.addEventListener('DOMContentLoaded', () => {
     geocodeAllPending();
   }
 });
-
