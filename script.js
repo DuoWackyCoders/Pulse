@@ -660,6 +660,148 @@ function isDuplicatePatient(candidate, existingList) {
   );
 }
 
+function downloadAllPatientsCsv() {
+  const list = getFilteredPatients();
+  if (list.length === 0) { setStatus('Nothing to download yet.', 'error'); return false; }
+  const csv = patientsToCSV(list);
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = activeProviderFilter ? `patients-${activeProviderFilter}.csv` : 'patients.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+/* ============================================
+   CLEAR ALL — two-step confirmation with backup offer
+   ============================================ */
+function showClearAllStep1() {
+  const modal = document.getElementById('clearAllModal');
+  document.getElementById('clearAllTitle').textContent = 'Erase all patient data?';
+  document.getElementById('clearAllText').textContent =
+    `This removes all ${patients.length} patient(s) from this browser. This cannot be undone.`;
+  document.getElementById('clearAllActions').innerHTML = `
+    <button id="clearAllBackOut" class="btn btn-secondary" type="button">Oh No, Back Out</button>
+    <button id="clearAllYes" class="btn btn-primary" type="button">Yes, Continue</button>
+  `;
+  modal.style.display = 'flex';
+  document.getElementById('clearAllBackOut').addEventListener('click', () => { modal.style.display = 'none'; });
+  document.getElementById('clearAllYes').addEventListener('click', showClearAllStep2);
+}
+
+function showClearAllStep2() {
+  document.getElementById('clearAllTitle').textContent = 'Back up first?';
+  document.getElementById('clearAllText').textContent =
+    'Recommended: download your current patient list before removing it, just in case.';
+  document.getElementById('clearAllActions').innerHTML = `
+    <button id="clearAllSkip" class="btn btn-ghost" type="button">Skip (data will be permanently deleted)</button>
+    <button id="clearAllBackup" class="btn btn-primary" type="button">⬇️ Back Up, Then Erase</button>
+  `;
+  document.getElementById('clearAllSkip').addEventListener('click', performClearAll);
+  document.getElementById('clearAllBackup').addEventListener('click', () => {
+    downloadAllPatientsCsv();
+    performClearAll();
+  });
+}
+
+function performClearAll() {
+  patients = [];
+  savePatients();
+  renderTable();
+  renderGroupSummary();
+  if (clientsMap) renderClientsMap();
+  document.getElementById('clearAllModal').style.display = 'none';
+  setStatus('All patient data cleared.', '');
+}
+
+/* ============================================
+   MANUAL ADD (Client Center)
+   ============================================ */
+let manualRowCount = 0;
+
+function manualRowHtml(idx) {
+  return `
+    <div class="manual-row" data-row="${idx}">
+      <input type="text" placeholder="Name" data-field="name">
+      <input type="text" placeholder="Address" data-field="address">
+      <input type="text" placeholder="DOB" data-field="dob">
+      <input type="text" placeholder="Coordinator" data-field="coordinator">
+      <input type="text" placeholder="Provider" data-field="provider">
+      <button type="button" class="btn-tiny btn-tiny-danger" onclick="window.removeManualRow(${idx})">✖</button>
+    </div>
+  `;
+}
+
+function addManualRow() {
+  manualRowCount++;
+  document.getElementById('manualAddRows').insertAdjacentHTML('beforeend', manualRowHtml(manualRowCount));
+}
+
+window.removeManualRow = function (idx) {
+  const rows = document.querySelectorAll('.manual-row');
+  if (rows.length <= 1) {
+    // Keep at least one row — just clear it instead of removing.
+    const row = document.querySelector(`.manual-row[data-row="${idx}"]`);
+    if (row) row.querySelectorAll('input').forEach(inp => inp.value = '');
+    return;
+  }
+  const row = document.querySelector(`.manual-row[data-row="${idx}"]`);
+  if (row) row.remove();
+};
+
+function resetManualRows() {
+  document.getElementById('manualAddRows').innerHTML = '';
+  manualRowCount = 0;
+  addManualRow();
+}
+
+async function submitManualAdd() {
+  const rows = document.querySelectorAll('.manual-row');
+  const candidates = [];
+  rows.forEach(row => {
+    const get = (f) => row.querySelector(`input[data-field="${f}"]`).value.trim();
+    const name = get('name');
+    const address = get('address');
+    if (!name && !address) return; // skip fully blank rows
+    candidates.push({
+      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      name, address,
+      dob: get('dob'),
+      coordinator: get('coordinator'),
+      provider: get('provider'),
+      notes: '', lat: null, lng: null, group: null, manualGroup: false
+    });
+  });
+
+  if (candidates.length === 0) {
+    document.getElementById('manualAddStatus').textContent = 'Fill in at least a name and address on one row.';
+    document.getElementById('manualAddStatus').className = 'status-line error';
+    return;
+  }
+
+  let skipped = 0;
+  const toAdd = [];
+  candidates.forEach(c => {
+    if (isDuplicatePatient(c, patients) || isDuplicatePatient(c, toAdd)) skipped++;
+    else toAdd.push(c);
+  });
+
+  patients = patients.concat(toAdd);
+  savePatients();
+  renderTable();
+  renderGroupSummary();
+  populateProviderFilter();
+  resetManualRows();
+
+  const statusEl = document.getElementById('manualAddStatus');
+  statusEl.textContent = `Added ${toAdd.length} patient(s).` + (skipped > 0 ? ` Skipped ${skipped} duplicate(s).` : '') + ' Geocoding now...';
+  statusEl.className = 'status-line success';
+
+  await geocodeAllPending();
+}
+
 function handleFile(file, mode) {
   const reader = new FileReader();
   reader.onload = async (e) => {
@@ -1263,6 +1405,26 @@ function showOverageModal(hours, maxHours, onApprove, onGoBack) {
   goBackBtn.onclick = () => { cleanup(); if (onGoBack) onGoBack(); };
 }
 
+function openInGoogleMaps() {
+  if (!startCoords || scheduledPatients.length === 0) {
+    setScheduleStatus('Generate a route first.', 'error');
+    return;
+  }
+  if (scheduledPatients.length > 23) {
+    setScheduleStatus('Google Maps supports up to ~23 stops in one link — trim the route or split it into two trips.', 'error');
+    return;
+  }
+  const origin = `${startCoords.lat},${startCoords.lng}`;
+  const last = scheduledPatients[scheduledPatients.length - 1];
+  const destination = `${last.lat},${last.lng}`;
+  const waypointStops = scheduledPatients.slice(0, -1);
+  const waypoints = waypointStops.map(p => `${p.lat},${p.lng}`).join('|');
+
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  window.open(url, '_blank');
+}
+
 function cancelRoute() {
   scheduledPatients = [];
   leftoverPatients = [];
@@ -1276,6 +1438,7 @@ function cancelRoute() {
 function wireScheduleUI() {
   document.getElementById('generateRouteBtn').addEventListener('click', generateRoute);
   document.getElementById('cancelRouteBtn').addEventListener('click', cancelRoute);
+  document.getElementById('openGoogleMapsBtn').addEventListener('click', openInGoogleMaps);
 
   document.getElementById('startAddressSelect').addEventListener('change', updateAddressFormVisibility);
   document.getElementById('saveNewAddressBtn').addEventListener('click', handleSaveNewAddress);
@@ -1757,29 +1920,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.files[0]) handleFile(e.target.files[0], 'append');
   });
 
-  document.getElementById('downloadCsvBtn').addEventListener('click', () => {
-    const list = getFilteredPatients();
-    if (list.length === 0) { setStatus('Nothing to download yet.', 'error'); return; }
-    const csv = patientsToCSV(list);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = activeProviderFilter ? `patients-${activeProviderFilter}.csv` : 'patients.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  document.getElementById('downloadCsvBtn').addEventListener('click', downloadAllPatientsCsv);
 
   document.getElementById('addCsvBtn').addEventListener('click', () => addFileInput.click());
 
-  document.getElementById('clearAllBtn').addEventListener('click', () => {
-    if (!confirm('This will remove all patients from this browser. Continue?')) return;
-    patients = [];
-    savePatients();
-    renderTable();
-    renderGroupSummary();
-    setStatus('Cleared.', '');
-  });
+  document.getElementById('clearAllBtn').addEventListener('click', showClearAllStep1);
+
+  document.getElementById('addManualRowBtn').addEventListener('click', addManualRow);
+  document.getElementById('submitManualAddBtn').addEventListener('click', submitManualAdd);
+  addManualRow(); // start with one blank row
 
   document.getElementById('providerFilter').addEventListener('change', (e) => {
     activeProviderFilter = e.target.value;
