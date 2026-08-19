@@ -126,6 +126,7 @@
       </div>
       <div id="routeSummary" class="route-summary"></div>
       <div id="routeMap" class="route-map"></div>
+      <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (not on route) • 🩷 Unavailable (visited in last 30 days)</p>
       <div class="two-col">
         <div class="col">
           <h3>Scheduled (<span id="scheduledCount">0</span>)</h3>
@@ -138,6 +139,165 @@
       </div>
       <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
         <button id="approveScheduleBtn" class="btn btn-primary" type="button">✅ Approve schedule</button>
+        <button id="exportScheduleCsvBtn" class="btn btn-secondary" type="button">⬇️ Download CSV (for DrChrono)</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="overageModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 class="card-title">Heads up</h3>
+      <p id="overageText"></p>
+      <div class="modal-actions">
+        <button id="modalGoBack" class="btn btn-secondary" type="button">Go Back</button>
+        <button id="modalApprove" class="btn btn-primary" type="button">Approved</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dayDetailModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-box-wide">
+      <h3 class="card-title" id="dayDetailTitle">—</h3>
+      <p class="card-subtitle" id="dayDetailSubtitle"></p>
+      <div id="dayDetailList"></div>
+      <div class="modal-actions" style="justify-content: flex-start; margin-top: 16px; flex-wrap:wrap;">
+        <button id="dayDetailBack" class="btn btn-secondary" type="button">← Back to Calendar</button>
+        <button id="exportDayBtn" class="btn btn-secondary" type="button">⬇️ Export Day CSV</button>
+        <button id="exportWeekBtn" class="btn btn-secondary" type="button">⬇️ Export Week CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editPatientModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 class="card-title">Edit patient</h3>
+      <div class="schedule-grid" style="grid-template-columns: 1fr;">
+        <label class="field">Name
+          <input type="text" id="editName">
+        </label>
+        <label class="field">Address
+          <input type="text" id="editAddress">
+        </label>
+        <label class="field">DOB
+          <input type="text" id="editDob">
+        </label>
+        <label class="field">Coordinator
+          <input type="text" id="editCoordinator">
+        </label>
+        <label class="field">Provider
+          <input type="text" id="editProvider">
+        </label>
+      </div>
+      <p id="editStatus" class="status-line"></p>
+      <div class="modal-actions">
+        <button id="editCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="editSaveBtn" class="btn btn-primary" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-clients" class="tab-panel" style="display:none;">
+
+  <!-- GROUPING CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Groups</h2>
+        <p class="card-subtitle">Pulse automatically clusters your patients by proximity — no setup needed, this just happens as you upload. Optional: draw a circle on the map only if you want to manually override one specific area.</p>
+      </div>
+    </div>
+    <div class="radius-control">
+      <span class="radius-value" id="groupSizeValue">20</span>
+      <input type="range" id="groupSizeSlider" min="5" max="30" step="1" value="20">
+      <span class="card-subtitle" style="margin:0;">max patients per auto-group</span>
+    </div>
+    <div id="groupSummary" style="margin-top:16px; margin-bottom:8px;"></div>
+    <button id="resetAutoGroupBtn" class="btn btn-ghost" type="button" style="margin-bottom:16px;">↺ Reset all to auto-grouping</button>
+
+    <div id="clientsMap" class="clients-map"></div>
+    <div id="drawAssignBar" class="draw-assign-bar" style="display:none;">
+      <span id="drawAssignCount"></span>
+      <input type="text" id="drawGroupLabel" placeholder="Group label (e.g. A)" style="max-width:140px;">
+      <button id="drawAssignBtn" class="btn btn-primary" type="button">Assign group</button>
+      <button id="drawCancelBtn" class="btn btn-ghost" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <!-- PATIENT TABLE CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">All patients</h2>
+        <p class="card-subtitle">Group assignment updates automatically as you add patients or change the radius.</p>
+      </div>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+      <p>No patients yet.</p>
+      <p>Upload a CSV above to get started.</p>
+    </div>
+
+    <div id="tableWrap" class="table-wrap" style="display:none;">
+      <table>
+        <thead id="patientTableHead">
+          <tr>
+            <th>Name</th>
+            <th>Address</th>
+            <th>DOB</th>
+            <th>Coordinator</th>
+            <th>Group</th>
+            <th>Override</th>
+          </tr>
+        </thead>
+        <tbody id="patientTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  </div>
+
+  <div id="tab-csvcenter" class="tab-panel" style="display:none;">
+
+  <div class="route-ribbon" aria-hidden="true">
+    <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
+      <path d="M0,14 Q125,0 250,14 T500,14 T750,14 T1000,14"
+            fill="none" stroke="var(--pink)" stroke-width="2" stroke-dasharray="1,10" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <!-- UPLOAD CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Patient list</h2>
+        <p class="card-subtitle">Upload a CSV to get started. Columns: Name, Address, DOB, Coordinator (Provider and Notes optional).</p>
+      </div>
+    </div>
+
+    <div id="dropzone" class="dropzone" role="button" tabindex="0">
+      <p class="dz-title">Drop a CSV here, or click to choose a file</p>
+      <p class="dz-sub">This replaces the current list — use "Add another CSV" below to append instead</p>
+    </div>
+    <input type="file" id="fileInput" accept=".csv">
+    <input type="file" id="addFileInput" accept=".csv">
+
+    <div class="upload-actions">
+      <button id="addCsvBtn" class="btn btn-secondary" type="button">➕ Add another CSV</button>
+      <button id="downloadCsvBtn" class="btn btn-secondary" type="button">⬇️ Download current list as CSV</button>
+      <button id="clearAllBtn" class="btn btn-ghost" type="button">Clear all</button>
+    </div>
+
+    <p id="statusLine" class="status-line"></p>
+  </section>
+
+  </div>
+
+  </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
         <button id="exportScheduleCsvBtn" class="btn btn-secondary" type="button">⬇️ Download CSV (for DrChrono)</button>
       </div>
     </section>
