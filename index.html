@@ -37,6 +37,7 @@
       <button class="nav-tab" data-tab="schedule" type="button">📅 Schedule</button>
       <button class="nav-tab" data-tab="clients" type="button">👥 Clients</button>
       <button class="nav-tab" data-tab="csvcenter" type="button">🗂️ Client Center</button>
+      <button class="nav-tab" data-tab="about" type="button">ℹ️ About</button>
     </nav>
 
     <label class="field" style="padding: 0 4px;">Viewing as
@@ -122,7 +123,10 @@
           <h2 class="card-title">Today's route</h2>
           <p class="card-subtitle">Drag patients between columns, or drag to reorder within a column. Times recalculate automatically.</p>
         </div>
-        <button id="cancelRouteBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="openGoogleMapsBtn" class="btn btn-secondary" type="button">🗺️ Open in Google Maps</button>
+          <button id="cancelRouteBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
+        </div>
       </div>
       <div id="routeSummary" class="route-summary"></div>
       <div id="routeMap" class="route-map"></div>
@@ -193,6 +197,14 @@
         <button id="editCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
         <button id="editSaveBtn" class="btn btn-primary" type="button">Save</button>
       </div>
+    </div>
+  </div>
+
+  <div id="clearAllModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 class="card-title" id="clearAllTitle">Are you sure?</h3>
+      <p id="clearAllText"></p>
+      <div class="modal-actions" id="clearAllActions"></div>
     </div>
   </div>
 
@@ -290,6 +302,98 @@
     <p id="statusLine" class="status-line"></p>
   </section>
 
+  <!-- MANUAL ADD CARD -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">➕ Add Client(s) Manually</h2>
+        <p class="card-subtitle">No CSV needed — fill in one or more rows below, then submit. Add another row before submitting if you have several to enter at once.</p>
+      </div>
+    </div>
+
+    <div id="manualAddRows"></div>
+
+    <div class="upload-actions">
+      <button id="addManualRowBtn" class="btn btn-secondary" type="button">+ Add another row</button>
+      <button id="submitManualAddBtn" class="btn btn-primary" type="button">Submit</button>
+    </div>
+    <p id="manualAddStatus" class="status-line"></p>
+  </section>
+
+  </div>
+
+  <div id="tab-about" class="tab-panel" style="display:none;">
+
+    <section class="card">
+      <div class="brand" style="margin-bottom:14px;">
+        <svg class="brand-mark" viewBox="0 0 60 24" aria-hidden="true" style="width:56px; height:26px;">
+          <polyline points="0,12 14,12 18,3 24,21 30,8 34,16 38,12 60,12"
+            fill="none" stroke="url(#aboutPulseGradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="aboutPulseGradient" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="var(--pink)"/>
+              <stop offset="50%" stop-color="var(--peach)"/>
+              <stop offset="100%" stop-color="var(--lime)"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="brand-name" style="font-size:1.6rem;">PULSE</span>
+      </div>
+      <p class="card-subtitle" style="font-size:1rem; color:var(--text);">
+        PULSE exists for one reason: to give home-visit providers back the hours they lose to bad routes. Every extra mile driven is a patient not seen — PULSE's job is to make sure the day's drive time serves the schedule, not the other way around.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">What PULSE does</h2>
+      <div class="about-grid">
+        <div class="about-item">
+          <div class="about-emoji">🗂️</div>
+          <h3>Organizes your patients</h3>
+          <p>Upload a CSV once. PULSE geocodes every address and automatically clusters patients into tight, walkable groups — no manual sorting, no spreadsheets.</p>
+        </div>
+        <div class="about-item">
+          <div class="about-emoji">🗺️</div>
+          <h3>Builds the smartest route</h3>
+          <p>Pick a group and how many stops you want. PULSE finds the closest real-road route using actual driving directions — not guesses — and shows you exactly when you'll arrive home.</p>
+        </div>
+        <div class="about-item">
+          <div class="about-emoji">📅</div>
+          <h3>Remembers everything</h3>
+          <p>Every approved day lands on a calendar you can look back on, drag to reschedule, or export straight into your EHR system.</p>
+        </div>
+        <div class="about-item">
+          <div class="about-emoji">🔔</div>
+          <h3>Watches the 30-day clock</h3>
+          <p>PULSE tracks who's due for a visit and flags anyone approaching or past 30 days since their last one — so nobody falls through the cracks.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">How a day works</h2>
+      <div class="route-ribbon" aria-hidden="true">
+        <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
+          <path d="M0,14 Q125,0 250,14 T500,14 T750,14 T1000,14"
+                fill="none" stroke="var(--pink)" stroke-width="2" stroke-dasharray="1,10" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <p class="card-subtitle">
+        <strong>1. Upload</strong> your patient list in Client Center.
+        <strong>2. Check groups</strong> on the Clients tab — PULSE clusters automatically, or draw your own.
+        <strong>3. Build a route</strong> on the Schedule tab — pick a group, set your stop count, generate.
+        <strong>4. Approve</strong> the day when it looks right, and it lands on your Calendar.
+        <strong>5. Export</strong> whenever you need a clean list for billing or your EHR.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">A note on how the numbers work</h2>
+      <p class="card-subtitle">
+        Drive times and the route line come from a live road-routing service — real streets, real turns, not straight-line guesses. If that service is ever briefly unreachable, PULSE automatically falls back to a straight-line estimate and tells you clearly when it has, so you always know which kind of number you're looking at.
+      </p>
+    </section>
+
   </div>
 
   </main>
@@ -298,4 +402,3 @@
 <script src="script.js"></script>
 </body>
 </html>
-
