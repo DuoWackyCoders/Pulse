@@ -743,6 +743,75 @@ input[type="range"] {
 .btn-tiny.btn-tiny-danger:hover { background: var(--pink); color: var(--text-on-accent); }
 
 /* ============================================
+   MANUAL ADD ROWS
+   ============================================ */
+
+.manual-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.6fr 0.9fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+.manual-row:last-child { border-bottom: none; }
+
+.manual-row input {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text);
+  width: 100%;
+}
+.manual-row input:focus {
+  outline: 2px solid var(--pink-deep);
+  outline-offset: 1px;
+}
+
+@media (max-width: 768px) {
+  .manual-row { grid-template-columns: 1fr 1fr; }
+}
+
+/* ============================================
+   ABOUT PAGE
+   ============================================ */
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.about-item {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+}
+
+.about-emoji {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.about-item h3 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  margin: 0 0 6px;
+}
+
+.about-item p {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 
