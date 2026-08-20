@@ -46,6 +46,8 @@
       </select>
     </label>
 
+    <button class="nav-tab" data-tab="admin" type="button">⚙️ Admin</button>
+
     <button id="themeToggle" class="theme-toggle" type="button">🌙 Dark mode</button>
   </aside>
 
@@ -511,6 +513,47 @@
       <p class="card-subtitle">
         Drive times and the route line come from a live road-routing service — real streets, real turns, not straight-line guesses. If that service is ever briefly unreachable, PULSE automatically falls back to a straight-line estimate and tells you clearly when it has, so you always know which kind of number you're looking at.
       </p>
+    </section>
+
+  </div>
+
+  <div id="tab-admin" class="tab-panel" style="display:none;">
+
+    <section class="card">
+      <h2 class="card-title">Theme</h2>
+      <p class="card-subtitle">Pick a look — saved automatically, applies everywhere.</p>
+      <select id="themeSelect" style="width:100%; max-width:340px; font-family: var(--font-mono); font-size:0.9rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+        <option value="light">☀️ Peach &amp; Pink (Light)</option>
+        <option value="dark">🌙 BlackPink (Dark)</option>
+        <option value="corporate">💼 Corporate Blue</option>
+        <option value="military">🎖️ Military Tactical</option>
+        <option value="mecha">🤖 Mecha Blue</option>
+        <option value="bitcoin">₿ Bitcoin Gold</option>
+      </select>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Practitioner info</h2>
+      <p class="card-subtitle">Stored locally on this device — used for reference for now.</p>
+      <div class="schedule-grid">
+        <label class="field">Name
+          <input type="text" id="adminPractitionerName">
+        </label>
+        <label class="field">Phone
+          <input type="text" id="adminPractitionerPhone">
+        </label>
+        <label class="field">Email
+          <input type="text" id="adminPractitionerEmail">
+        </label>
+      </div>
+      <button id="adminSaveInfoBtn" class="btn btn-primary" type="button" style="margin-top:14px;">Save</button>
+      <p id="adminInfoStatus" class="status-line"></p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Saved starting addresses (home/office)</h2>
+      <p class="card-subtitle">Managed on the Schedule tab's "Starting address" dropdown — add, edit, or remove them there. Listed here for a quick check.</p>
+      <div id="adminAddressList"></div>
     </section>
 
   </div>
