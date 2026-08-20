@@ -56,7 +56,7 @@
       <div class="card-header">
         <div>
           <h2 class="card-title" id="calendarMonthLabel">Calendar</h2>
-          <p class="card-subtitle">Days with an approved schedule show a count. Click a day to see who's on it.</p>
+          <p class="card-subtitle">Days are colored by which group they used — same colors as the Clients tab. Multiple dots mean multiple groups that day. Click a day to see who's on it.</p>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button id="calPrevBtn" class="btn btn-secondary" type="button">◀ Prev</button>
@@ -70,6 +70,13 @@
   </div>
 
   <div id="tab-schedule" class="tab-panel" style="display:none;">
+
+    <div class="mode-toggle">
+      <button id="dailyModeBtn" class="mode-btn active" type="button">📆 Daily</button>
+      <button id="weeklyModeBtn" class="mode-btn" type="button">🗓️ Weekly</button>
+    </div>
+
+    <div id="scheduleModeDaily">
     <section class="card">
       <h2 class="card-title">Build today's route</h2>
       <p class="card-subtitle">Pick a group, set how many stops, and generate an optimized order. Drive times are straight-line estimates.</p>
@@ -94,6 +101,9 @@
         <label class="field">Group
           <select id="groupSelect"></select>
         </label>
+        <label class="field">+ Also include (optional)
+          <select id="groupSelect2"></select>
+        </label>
         <label class="field">Stops today
           <input type="number" id="stopCount" min="1" value="8">
         </label>
@@ -105,6 +115,12 @@
         </label>
         <label class="field">Max hours before warning
           <input type="number" id="maxHours" min="1" step="0.5" value="7">
+        </label>
+        <label class="field">Route direction
+          <select id="routeDirection">
+            <option value="closest">Closest first (default)</option>
+            <option value="furthest">Furthest first (finish near home)</option>
+          </select>
         </label>
       </div>
 
@@ -125,12 +141,24 @@
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button id="openGoogleMapsBtn" class="btn btn-secondary" type="button">🗺️ Open in Google Maps</button>
+          <button id="myMapsCsvBtn" class="btn btn-secondary" type="button">📍 Download for Google My Maps</button>
           <button id="cancelRouteBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
         </div>
       </div>
       <div id="routeSummary" class="route-summary"></div>
+      <div id="myMapsHelp" class="status-line" style="display:none;"></div>
       <div id="routeMap" class="route-map"></div>
       <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (not on route) • 🩷 Unavailable (visited in last 30 days)</p>
+
+      <div id="approveTopBar" style="display:flex; gap:10px; margin:14px 0; flex-wrap:wrap;">
+        <button id="approveScheduleBtnTop" class="btn btn-primary" type="button">✅ Approve schedule</button>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <input type="text" id="scheduleSearchInput" placeholder="🔍 Search any patient to add to this day..." style="width:100%; font-family: var(--font-mono); font-size:0.9rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+        <div id="scheduleSearchResults" style="display:none; margin-top:8px;"></div>
+      </div>
+
       <div class="two-col">
         <div class="col">
           <h3>Scheduled (<span id="scheduledCount">0</span>)</h3>
@@ -146,6 +174,54 @@
         <button id="exportScheduleCsvBtn" class="btn btn-secondary" type="button">⬇️ Download CSV (for DrChrono)</button>
       </div>
     </section>
+    </div>
+
+    <div id="scheduleModeWeekly" style="display:none;">
+      <section class="card">
+        <h2 class="card-title">Build this week's routes</h2>
+        <p class="card-subtitle">Pick each day's group and stop count independently, then generate all five at once.</p>
+
+        <div class="schedule-grid">
+          <label class="field">Week starting (Monday)
+            <input type="date" id="weekStartDate">
+          </label>
+          <label class="field">Starting address (home base)
+            <select id="weekStartAddressSelect"></select>
+          </label>
+          <label class="field">Start time
+            <input type="time" id="weekStartTime" value="08:00">
+          </label>
+          <label class="field">Visit duration (min, default)
+            <input type="number" id="weekVisitDuration" min="1" value="15">
+          </label>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
+          <input type="checkbox" id="weekIncludeRecent" style="width:16px; height:16px;">
+          Include patients visited in the last 30 days (manual override)
+        </label>
+
+        <div class="work-days-row">
+          <span class="work-days-label">Standard work days (saved automatically):</span>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggle" data-day="0"> Mon</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggle" data-day="1"> Tue</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggle" data-day="2"> Wed</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggle" data-day="3"> Thu</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggle" data-day="4"> Fri</label>
+        </div>
+
+        <div id="weekDayCards" class="week-day-cards"></div>
+
+        <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
+          <button id="generateWeekBtn" class="btn btn-primary" type="button">Generate Week</button>
+          <button id="approveWeekBtn" class="btn btn-primary" type="button" style="display:none;">✅ Approve Whole Week</button>
+          <button id="cancelWeekBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
+        </div>
+        <p id="weekStatus" class="status-line"></p>
+      </section>
+
+      <div id="weekResults"></div>
+    </div>
+
   </div>
 
   <div id="overageModal" class="modal-overlay" style="display:none;">
@@ -161,11 +237,17 @@
 
   <div id="dayDetailModal" class="modal-overlay" style="display:none;">
     <div class="modal-box modal-box-wide">
-      <h3 class="card-title" id="dayDetailTitle">—</h3>
-      <p class="card-subtitle" id="dayDetailSubtitle"></p>
-      <div id="dayDetailList"></div>
-      <div class="modal-actions" style="justify-content: flex-start; margin-top: 16px; flex-wrap:wrap;">
+      <div class="modal-sticky-header">
+        <button id="dayDetailCloseX" class="modal-close-x" type="button" aria-label="Close">✕</button>
+        <div>
+          <h3 class="card-title" id="dayDetailTitle">—</h3>
+          <p class="card-subtitle" id="dayDetailSubtitle"></p>
+        </div>
+      </div>
+      <div id="dayDetailList" class="modal-scroll-body"></div>
+      <div class="modal-sticky-footer">
         <button id="dayDetailBack" class="btn btn-secondary" type="button">← Back to Calendar</button>
+        <button id="dayDetailGoogleMapsBtn" class="btn btn-secondary" type="button">🗺️ Open in Google Maps</button>
         <button id="exportDayBtn" class="btn btn-secondary" type="button">⬇️ Export Day CSV</button>
         <button id="exportWeekBtn" class="btn btn-secondary" type="button">⬇️ Export Week CSV</button>
       </div>
@@ -208,6 +290,26 @@
     </div>
   </div>
 
+  <div id="overwriteModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 class="card-title">⚠️ Already scheduled</h3>
+      <p id="overwriteText"></p>
+      <div class="modal-actions" id="overwriteActions"></div>
+    </div>
+  </div>
+
+  <div id="changeDateModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 class="card-title">Move to which date?</h3>
+      <p id="changeDateSubtitle" class="card-subtitle"></p>
+      <input type="date" id="changeDateInput" style="width:100%; font-family: var(--font-mono); font-size:0.95rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text); margin-top:10px;">
+      <div class="modal-actions">
+        <button id="changeDateCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="changeDateConfirmBtn" class="btn btn-primary" type="button">Move</button>
+      </div>
+    </div>
+  </div>
+
   <div id="tab-clients" class="tab-panel" style="display:none;">
 
   <!-- GROUPING CARD -->
@@ -243,6 +345,8 @@
         <p class="card-subtitle">Group assignment updates automatically as you add patients or change the radius.</p>
       </div>
     </div>
+
+    <input type="text" id="clientsSearchInput" placeholder="🔍 Search patients by name..." style="width:100%; font-family: var(--font-mono); font-size:0.9rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text); margin-bottom:16px;">
 
     <div id="emptyState" class="empty-state">
       <p>No patients yet.</p>
