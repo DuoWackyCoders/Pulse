@@ -575,11 +575,23 @@ function renderTable() {
     emptyState.style.display = 'block';
     return;
   }
+
+  const searchInput = document.getElementById('clientsSearchInput');
+  const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  const displayed = getFilteredPatients().filter(p => !searchTerm || p.name.toLowerCase().includes(searchTerm));
+
+  if (displayed.length === 0) {
+    tableWrap.style.display = 'none';
+    emptyState.style.display = 'block';
+    emptyState.innerHTML = `<p>No patients match "${escapeHtml(searchInput.value)}".</p>`;
+    return;
+  }
   tableWrap.style.display = 'block';
   emptyState.style.display = 'none';
+  emptyState.innerHTML = '<p>No patients yet.</p><p>Upload a CSV above to get started.</p>';
 
   tbody.innerHTML = '';
-  getFilteredPatients().forEach(p => {
+  displayed.forEach(p => {
     const tr = document.createElement('tr');
 
     const groupLabel = p.group || 'unassigned';
@@ -943,6 +955,61 @@ window.changeStopGroup = function (patientId, newLabel) {
   setScheduleStatus(`Moved ${master.name} to Group ${label}.`, 'success');
 };
 
+function renderScheduleSearchResults(term) {
+  const container = document.getElementById('scheduleSearchResults');
+  if (!term) { container.style.display = 'none'; container.innerHTML = ''; return; }
+
+  const scheduledIds = new Set(scheduledPatients.map(p => p.id));
+  const matches = getFilteredPatients()
+    .filter(p => p.lat !== null && p.lng !== null && p.name.toLowerCase().includes(term.toLowerCase()))
+    .slice(0, 6);
+
+  if (matches.length === 0) {
+    container.innerHTML = '<p class="status-line">No matches.</p>';
+    container.style.display = 'block';
+    return;
+  }
+
+  container.innerHTML = matches.map(p => {
+    const alreadyScheduled = scheduledIds.has(p.id);
+    return `
+      <div class="search-result-row">
+        <span>${escapeHtml(p.name)} — ${escapeHtml(p.address)} (Grp ${escapeHtml(p.group || '—')})</span>
+        ${alreadyScheduled
+          ? `<span style="color:var(--lime-deep); font-weight:700; font-size:0.78rem; flex-shrink:0;">✓ Already scheduled</span>`
+          : `<div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" class="btn-tiny" onclick="window.addPatientToLeftover('${p.id}')">+ Leftover</button>
+              <button type="button" class="btn-tiny" onclick="window.addPatientToScheduleDirectly('${p.id}')">+ To Schedule</button>
+            </div>`}
+      </div>
+    `;
+  }).join('');
+  container.style.display = 'block';
+}
+
+window.addPatientToScheduleDirectly = async function (patientId) {
+  if (!startCoords) {
+    alert('Generate a route first (need a starting address set) before adding a patient directly.');
+    return;
+  }
+  const p = patients.find(pt => pt.id === patientId);
+  if (!p) return;
+  if (scheduledPatients.some(sp => sp.id === patientId)) return;
+
+  const includeRecent = document.getElementById('includeRecent').checked;
+  const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
+  if (!includeRecent && isRecentlyVisited(p, scheduleDate)) {
+    alert(`${p.name} was visited within the last 30 days. Check "Include patients visited in the last 30 days" to add them anyway.`);
+    return;
+  }
+
+  scheduledPatients.push(p);
+  leftoverPatients = leftoverPatients.filter(lp => lp.id !== patientId);
+  document.getElementById('scheduleSearchInput').value = '';
+  document.getElementById('scheduleSearchResults').style.display = 'none';
+  await recalcAndRender();
+};
+
 window.addPatientToLeftover = function (patientId) {
   const p = patients.find(pt => pt.id === patientId);
   if (!p) return;
@@ -1031,14 +1098,41 @@ async function handleSaveNewAddress() {
   }
 }
 
+function groupSelectOptionsHtml() {
+  const groups = Array.from(new Set(getFilteredPatients().map(p => p.group).filter(Boolean))).sort();
+  return '<option value="__ANY__">🔀 Closest Mix (any group)</option>' +
+    groups.map(g => `<option value="${g}">Group ${g}</option>`).join('');
+}
+
+function groupOnlyOptionsHtml() {
+  const groups = Array.from(new Set(getFilteredPatients().map(p => p.group).filter(Boolean))).sort();
+  return '<option value="">None</option>' + groups.map(g => `<option value="${g}">Group ${g}</option>`).join('');
+}
+
 function populateGroupSelect() {
   const sel = document.getElementById('groupSelect');
   if (!sel) return;
-  const groups = Array.from(new Set(getFilteredPatients().map(p => p.group).filter(Boolean))).sort();
   const current = sel.value;
-  sel.innerHTML = '<option value="__ANY__">🔀 Closest Mix (any group)</option>' +
-    groups.map(g => `<option value="${g}">Group ${g}</option>`).join('');
+  sel.innerHTML = groupSelectOptionsHtml();
+  const groups = Array.from(new Set(getFilteredPatients().map(p => p.group).filter(Boolean)));
   if (current && (current === '__ANY__' || groups.includes(current))) sel.value = current;
+
+  const sel2 = document.getElementById('groupSelect2');
+  if (sel2) {
+    const current2 = sel2.value;
+    sel2.innerHTML = groupOnlyOptionsHtml();
+    if (current2 && groups.includes(current2)) sel2.value = current2;
+    updateGroup2Availability();
+  }
+}
+
+function updateGroup2Availability() {
+  const sel = document.getElementById('groupSelect');
+  const sel2 = document.getElementById('groupSelect2');
+  if (!sel || !sel2) return;
+  const isMix = sel.value === '__ANY__';
+  sel2.disabled = isMix;
+  if (isMix) sel2.value = '';
 }
 
 function milesToMinutes(miles) {
@@ -1059,7 +1153,48 @@ function nearestNeighborOrder(fromLat, fromLng, list) {
     ordered.push(next);
     curLat = next.lat; curLng = next.lng;
   }
-  return ordered;
+  return twoOptImprove(fromLat, fromLng, ordered);
+}
+
+/**
+ * Nearest-neighbor is greedy and near-sighted — it can walk right past a
+ * stop only to have to double back for it later, which is exactly the
+ * "drove past a client, had to take the road again" pattern. 2-opt fixes
+ * this: repeatedly check pairs of route segments and un-cross them
+ * whenever doing so shortens the total path, until no more improvements
+ * are found. Standard, well-proven technique for cleaning up greedy tours.
+ * Runs on straight-line distance (cheap, no extra API calls) — the actual
+ * real-road times are still fetched fresh from the routing service on
+ * this final, improved order.
+ */
+function twoOptImprove(fromLat, fromLng, list) {
+  if (list.length < 3) return list;
+
+  const legLength = (route) => {
+    let total = haversineMiles(fromLat, fromLng, route[0].lat, route[0].lng);
+    for (let i = 0; i < route.length - 1; i++) {
+      total += haversineMiles(route[i].lat, route[i].lng, route[i + 1].lat, route[i + 1].lng);
+    }
+    return total;
+  };
+
+  let route = [...list];
+  let improved = true;
+  let guard = 0;
+  while (improved && guard < 200) {
+    improved = false;
+    guard++;
+    for (let i = 0; i < route.length - 1; i++) {
+      for (let j = i + 1; j < route.length; j++) {
+        const candidate = route.slice(0, i).concat(route.slice(i, j + 1).reverse(), route.slice(j + 1));
+        if (legLength(candidate) < legLength(route) - 1e-9) {
+          route = candidate;
+          improved = true;
+        }
+      }
+    }
+  }
+  return route;
 }
 
 const SAME_COMPLEX_MILES = 0.03; // ~50 meters — close enough to call it the same building/complex
@@ -1081,13 +1216,448 @@ function isRecentlyVisited(patient, asOfDateStr) {
   return daysSince < 30;
 }
 
+/**
+ * Pure route-selection core — no DOM reads, no global state writes.
+ * Returns the picked patients (unordered pool selection) plus bookkeeping
+ * counts. Ordering + real-road timing happens separately in recalcAndRender
+ * (Daily) or computeAndOrderDay (Weekly), since both need the same logic.
+ */
+function selectRoutePatients({ group, group2, stopCount, startCoords, scheduleDate, includeRecent, excludeIds, routeDirection }) {
+  const isMixMode = group === '__ANY__';
+  const strictGroup = !isMixMode;
+  const excludeSet = excludeIds || new Set();
+  const targetGroups = group2 ? [group, group2] : [group];
+
+  const allEligible = getFilteredPatients().filter(p => p.lat !== null && p.lng !== null && !excludeSet.has(p.id));
+  const eligible = includeRecent ? allEligible : allEligible.filter(p => !isRecentlyVisited(p, scheduleDate));
+  const excludedCount = allEligible.length - eligible.length;
+
+  let pool;
+  let fillCount = 0;
+  let groupOnlyCount = 0;
+
+  if (strictGroup) {
+    const groupPatients = eligible.filter(p => targetGroups.includes(p.group));
+    groupOnlyCount = groupPatients.length;
+    if (groupPatients.length === 0) {
+      return { error: excludedCount > 0
+        ? `All patients in ${group2 ? 'those groups' : 'that group'} were visited within the last 30 days (or already used elsewhere this week). Check "Include patients visited in the last 30 days" to override.`
+        : `No geocoded patients in ${group2 ? 'those groups' : 'that group'} yet.` };
+    }
+    pool = groupPatients;
+    if (groupPatients.length < stopCount) {
+      const needed = stopCount - groupPatients.length;
+      const otherByDistance = eligible.filter(p => !targetGroups.includes(p.group))
+        .map(p => ({ p, dist: haversineMiles(startCoords.lat, startCoords.lng, p.lat, p.lng) }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, needed)
+        .map(x => x.p);
+      pool = groupPatients.concat(otherByDistance);
+      fillCount = otherByDistance.length;
+    }
+  } else {
+    pool = eligible;
+    if (pool.length === 0) {
+      return { error: excludedCount > 0
+        ? `All eligible patients were visited within the last 30 days (or already used elsewhere this week). Check "Include patients visited in the last 30 days" to override.`
+        : 'No geocoded patients available yet.' };
+    }
+  }
+
+  const byDistance = pool
+    .map(p => ({ p, dist: haversineMiles(startCoords.lat, startCoords.lng, p.lat, p.lng) }))
+    .sort((a, b) => a.dist - b.dist);
+
+  let closestN = byDistance.slice(0, stopCount).map(x => x.p);
+
+  const addressMates = byDistance
+    .map(x => x.p)
+    .filter(p => !closestN.includes(p) && closestN.some(sel => isSameLocation(sel, p)));
+  closestN = closestN.concat(addressMates);
+
+  const remainder = byDistance.map(x => x.p).filter(p => !closestN.includes(p));
+
+  // A path's total distance is identical whether driven forward or backward
+  // — reversing the already-optimized order costs nothing and lets the
+  // provider start far (to beat traffic) and finish near home instead.
+  let ordered = nearestNeighborOrder(startCoords.lat, startCoords.lng, closestN);
+  if (routeDirection === 'furthest') ordered = ordered.slice().reverse();
+
+  return {
+    scheduled: ordered,
+    leftover: remainder,
+    excludedCount, fillCount, groupOnlyCount,
+    addressMateCount: addressMates.length,
+    strictGroup
+  };
+}
+
+/**
+ * Reusable per-day timing calculator — same logic as recalcAndRender's loop,
+ * but returns a plain snapshot instead of mutating global state, so both
+ * Daily's live editor and Weekly's multi-day batch can share it safely.
+ */
+async function computeTimingForDay(startCoords, orderedPatients, startTimeStr, defaultVisitDuration) {
+  if (orderedPatients.length === 0) {
+    return { stops: [], totalHours: 0, usingRealRoads: false, dayStartMinutes: 0, returnHomeMinutes: 0 };
+  }
+  const [h, m] = startTimeStr.split(':').map(Number);
+  let cursorMinutes = h * 60 + m;
+  const dayStartMinutes = cursorMinutes;
+
+  const legsResult = await fetchRouteLegs(startCoords.lat, startCoords.lng, orderedPatients);
+  const legs = legsResult ? legsResult.legs : null;
+  const usingRealRoads = !!legs;
+
+  let prevLat = startCoords.lat, prevLng = startCoords.lng, prevPatient = null;
+  const stops = [];
+  orderedPatients.forEach((p, i) => {
+    const sameAsPrev = prevPatient && isSameLocation(prevPatient, p);
+    let travelMinutes = 0, travelMiles = 0;
+    if (!sameAsPrev) {
+      if (legs && legs[i]) {
+        travelMinutes = legs[i].minutes;
+        travelMiles = legs[i].miles;
+      } else {
+        travelMiles = haversineMiles(prevLat, prevLng, p.lat, p.lng);
+        travelMinutes = milesToMinutes(travelMiles);
+      }
+      cursorMinutes += travelMinutes;
+    }
+    const arrivalMinutes = cursorMinutes;
+    const duration = p.visitDuration || defaultVisitDuration;
+    cursorMinutes += duration;
+    stops.push({ id: p.id, name: p.name, dob: p.dob, address: p.address, provider: p.provider, group: p.group, lat: p.lat, lng: p.lng, arrivalMinutes, travelMinutes, travelMiles });
+    prevLat = p.lat; prevLng = p.lng; prevPatient = p;
+  });
+
+  let returnTripMinutes = 0;
+  if (legs && legs[legs.length - 1]) {
+    returnTripMinutes = legs[legs.length - 1].minutes;
+  } else {
+    const last = orderedPatients[orderedPatients.length - 1];
+    returnTripMinutes = milesToMinutes(haversineMiles(last.lat, last.lng, startCoords.lat, startCoords.lng));
+  }
+  const returnHomeMinutes = cursorMinutes + returnTripMinutes;
+  const totalHours = (returnHomeMinutes - dayStartMinutes) / 60;
+
+  return { stops, totalHours, usingRealRoads, dayStartMinutes, returnHomeMinutes };
+}
+
+/* ============================================
+   WEEKLY SCHEDULING MODE
+   ============================================ */
+const WEEK_DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const STANDARD_WORK_DAYS_KEY = 'patientRouter.standardWorkDays.v1'; // array of 5 booleans, Mon..Fri
+
+function loadStandardWorkDays() {
+  try {
+    const raw = localStorage.getItem(STANDARD_WORK_DAYS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* fall through to default */ }
+  return [true, true, true, true, true]; // default: every weekday is a standard work day until they say otherwise
+}
+function saveStandardWorkDays(arr) {
+  localStorage.setItem(STANDARD_WORK_DAYS_KEY, JSON.stringify(arr));
+}
+let standardWorkDays = loadStandardWorkDays();
+let weekResults = []; // populated after Generate Week — array of {date, dayLabel, group, stopCount, stops, error, totalHours, usingRealRoads}
+let weekStartCoordsGlobal = null;
+
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow; // shift back to Monday
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function renderWeekDayCards() {
+  const container = document.getElementById('weekDayCards');
+  const startInput = document.getElementById('weekStartDate');
+  if (!startInput.value) {
+    const today = new Date();
+    startInput.value = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
+  }
+  const monday = mondayOf(startInput.value);
+
+  let html = '';
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const dateStr = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    const isStandardOff = !standardWorkDays[i];
+
+    html += `
+      <div class="week-day-card${isStandardOff ? ' wdc-off' : ''}" data-day-index="${i}">
+        <h4>${WEEK_DAY_LABELS[i]}</h4>
+        <div class="wdc-date">${dateStr}</div>
+        ${isStandardOff ? `
+          <p class="wdc-off-label">Not in Service</p>
+          <label class="wdc-override-check">
+            <input type="checkbox" class="wdc-work-anyway"> Work this day anyway
+          </label>
+          <div class="wdc-fields" style="display:none;">
+            <select class="wdc-group">${groupSelectOptionsHtml()}</select>
+            <input type="number" class="wdc-count" min="1" value="8" placeholder="Stops">
+          </div>
+        ` : `
+          <div class="wdc-fields">
+            <select class="wdc-group">${groupSelectOptionsHtml()}</select>
+            <input type="number" class="wdc-count" min="1" value="8" placeholder="Stops">
+          </div>
+        `}
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+
+  container.querySelectorAll('.wdc-work-anyway').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const card = e.target.closest('.week-day-card');
+      card.querySelector('.wdc-fields').style.display = e.target.checked ? 'block' : 'none';
+    });
+  });
+}
+
+function syncWorkDayCheckboxesUI() {
+  document.querySelectorAll('.workDayToggle').forEach(cb => {
+    const idx = parseInt(cb.getAttribute('data-day'), 10);
+    cb.checked = standardWorkDays[idx];
+  });
+}
+
+function populateWeekStartAddressSelect() {
+  const sel = document.getElementById('weekStartAddressSelect');
+  const saved = loadStartAddresses();
+  sel.innerHTML = saved.length
+    ? saved.map(a => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.address)}</option>`).join('')
+    : '<option value="">No saved address — add one on the Daily tab first</option>';
+}
+
+async function generateWeek() {
+  const startAddrId = document.getElementById('weekStartAddressSelect').value;
+  if (!startAddrId) { setWeekStatus('Pick a starting address first (add one on the Daily tab if needed).', 'error'); return; }
+  const saved = loadStartAddresses().find(a => a.id === startAddrId);
+  if (!saved) { setWeekStatus('That saved address could not be found.', 'error'); return; }
+  const weekStartCoords = { lat: saved.lat, lng: saved.lng };
+  weekStartCoordsGlobal = weekStartCoords;
+
+  const startTime = document.getElementById('weekStartTime').value || '08:00';
+  const visitDuration = parseFloat(document.getElementById('weekVisitDuration').value) || 15;
+  const includeRecent = document.getElementById('weekIncludeRecent').checked;
+  const monday = mondayOf(document.getElementById('weekStartDate').value);
+
+  const genBtn = document.getElementById('generateWeekBtn');
+  genBtn.disabled = true;
+  genBtn.textContent = '⏳ Generating 5 days (this takes a bit longer)...';
+  setWeekStatus('Working through Monday–Friday, one real-road route at a time...', '');
+
+  weekResults = [];
+  const usedThisWeek = new Set();
+
+  try {
+    const dayCards = document.querySelectorAll('.week-day-card');
+    for (let i = 0; i < dayCards.length; i++) {
+      const card = dayCards[i];
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+
+      const isStandardOff = !standardWorkDays[i];
+      const workAnywayCb = card.querySelector('.wdc-work-anyway');
+      const workingToday = !isStandardOff || (workAnywayCb && workAnywayCb.checked);
+
+      if (!workingToday) {
+        weekResults.push({ date: dateStr, dayLabel: WEEK_DAY_LABELS[i], offDay: true });
+        continue;
+      }
+
+      const group = card.querySelector('.wdc-group').value;
+      const stopCount = parseInt(card.querySelector('.wdc-count').value, 10) || 0;
+
+      setWeekStatus(`Generating ${WEEK_DAY_LABELS[i]} (${i + 1} of 5)...`, '');
+
+      const selection = selectRoutePatients({
+        group, stopCount, startCoords: weekStartCoords, scheduleDate: dateStr, includeRecent, excludeIds: usedThisWeek
+      });
+
+      if (selection.error) {
+        weekResults.push({ date: dateStr, dayLabel: WEEK_DAY_LABELS[i], group, stopCount, error: selection.error });
+        continue;
+      }
+
+      selection.scheduled.forEach(p => usedThisWeek.add(p.id));
+      const timing = await computeTimingForDay(weekStartCoords, selection.scheduled, startTime, visitDuration);
+
+      weekResults.push({
+        date: dateStr, dayLabel: WEEK_DAY_LABELS[i], group, stopCount,
+        stops: timing.stops, totalHours: timing.totalHours, usingRealRoads: timing.usingRealRoads,
+        fillCount: selection.fillCount, excludedCount: selection.excludedCount
+      });
+    }
+
+    renderWeekResults();
+    const successDays = weekResults.filter(d => !d.error && !d.offDay).length;
+    setWeekStatus(`Generated ${successDays} of 5 days. Review below, then Approve Whole Week.`, 'success');
+    document.getElementById('approveWeekBtn').style.display = weekResults.some(d => !d.error) ? 'inline-block' : 'none';
+  } catch (e) {
+    console.error('generateWeek failed', e);
+    setWeekStatus('Something went wrong generating the week. Try again.', 'error');
+  } finally {
+    genBtn.disabled = false;
+    genBtn.textContent = 'Generate Week';
+  }
+}
+
+window.openWeekDayInGoogleMaps = function (dayIdx) {
+  const day = weekResults[dayIdx];
+  if (!day || !day.stops || day.stops.length === 0 || !weekStartCoordsGlobal) {
+    alert('No stops to map for this day.');
+    return;
+  }
+  if (day.stops.length > 23) {
+    alert('Google Maps supports up to ~23 stops in one link — this day has more. Split it or use My Maps export instead.');
+    return;
+  }
+  const origin = `${weekStartCoordsGlobal.lat},${weekStartCoordsGlobal.lng}`;
+  const last = day.stops[day.stops.length - 1];
+  const destination = `${last.lat},${last.lng}`;
+  const waypointStops = day.stops.slice(0, -1);
+  const waypoints = waypointStops.map(s => `${s.lat},${s.lng}`).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  window.open(url, '_blank');
+};
+
+function renderWeekResults() {
+  const container = document.getElementById('weekResults');
+  container.innerHTML = weekResults.map((day, dayIdx) => {
+    if (day.offDay) {
+      return `
+        <div class="week-result-card wrc-off">
+          <h3>${day.dayLabel} — ${day.date}</h3>
+          <p class="wrc-meta">Not in Service — no route generated.</p>
+        </div>
+      `;
+    }
+    if (day.error) {
+      return `
+        <div class="week-result-card wrc-error">
+          <h3>${day.dayLabel} — ${day.date}</h3>
+          <p class="wrc-meta" style="color:var(--pink-deep);">${escapeHtml(day.error)}</p>
+        </div>
+      `;
+    }
+    const fillNote = day.fillCount > 0 ? ` — ${day.fillCount} pulled from nearby groups to fill the count` : '';
+    const excludedNote = day.excludedCount > 0 ? ` — ${day.excludedCount} excluded (visited &lt;30 days)` : '';
+    return `
+      <div class="week-result-card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+          <h3>${day.dayLabel} — ${day.date}</h3>
+          <button type="button" class="btn-tiny" onclick="window.openWeekDayInGoogleMaps(${dayIdx})">🗺️ Open in Google Maps</button>
+        </div>
+        <p class="wrc-meta">
+          Group ${escapeHtml(day.group === '__ANY__' ? 'Closest Mix' : day.group)} · ${day.stops.length} stop(s) · ${day.totalHours.toFixed(1)} hrs
+          · ${day.usingRealRoads ? '✓ real road times' : '⚠ straight-line estimate'}${fillNote}${excludedNote}
+        </p>
+        ${day.stops.map((s, i) => `
+          <div class="week-stop-row">
+            <span>#${i + 1} ${escapeHtml(s.name)} (Grp- ${escapeHtml(s.group || '—')})</span>
+            <span>${minutesToClock(s.arrivalMinutes)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }).join('');
+}
+
+function setWeekStatus(msg, kind) {
+  const el = document.getElementById('weekStatus');
+  el.textContent = msg;
+  el.className = 'status-line' + (kind ? ' ' + kind : '');
+}
+
+function approveWeek() {
+  const datesToApprove = weekResults
+    .filter(d => !d.offDay && !d.error && d.stops && d.stops.length > 0)
+    .map(d => d.date);
+  const conflicts = datesWithExistingSchedule(datesToApprove);
+
+  if (conflicts.length > 0) {
+    showOverwriteConfirm(
+      `${conflicts.length} day(s) this week already have an approved schedule (${conflicts.join(', ')}). Continuing will overwrite those days' patient lists on the calendar — the prior schedule for those specific dates will be replaced, not merged. Continue?`,
+      commitApproveWeek
+    );
+  } else {
+    commitApproveWeek();
+  }
+}
+
+function commitApproveWeek() {
+  let totalApproved = 0;
+  weekResults.forEach(day => {
+    if (day.offDay || day.error || !day.stops || day.stops.length === 0) return;
+    day.stops.forEach(s => {
+      const master = patients.find(p => p.id === s.id);
+      if (master) master.lastVisitDate = day.date;
+    });
+    recordApprovedSchedule(day.date, day.stops);
+    totalApproved += day.stops.length;
+  });
+  savePatients();
+  renderTable();
+  setWeekStatus(`Approved the week — ${totalApproved} patient visit(s) across the days that generated successfully. Check the Home tab calendar.`, 'success');
+  document.getElementById('approveWeekBtn').style.display = 'none';
+}
+
+function cancelWeek() {
+  weekResults = [];
+  document.getElementById('weekResults').innerHTML = '';
+  document.getElementById('approveWeekBtn').style.display = 'none';
+  setWeekStatus('Week cleared.', '');
+}
+
+function switchScheduleMode(mode) {
+  document.getElementById('scheduleModeDaily').style.display = mode === 'daily' ? 'block' : 'none';
+  document.getElementById('scheduleModeWeekly').style.display = mode === 'weekly' ? 'block' : 'none';
+  document.getElementById('dailyModeBtn').classList.toggle('active', mode === 'daily');
+  document.getElementById('weeklyModeBtn').classList.toggle('active', mode === 'weekly');
+  if (mode === 'weekly') {
+    populateWeekStartAddressSelect();
+    syncWorkDayCheckboxesUI();
+    renderWeekDayCards();
+  }
+}
+
+function wireWeeklyUI() {
+  document.getElementById('dailyModeBtn').addEventListener('click', () => switchScheduleMode('daily'));
+  document.getElementById('weeklyModeBtn').addEventListener('click', () => switchScheduleMode('weekly'));
+  document.getElementById('weekStartDate').addEventListener('change', renderWeekDayCards);
+  document.getElementById('generateWeekBtn').addEventListener('click', generateWeek);
+  document.getElementById('approveWeekBtn').addEventListener('click', approveWeek);
+  document.getElementById('cancelWeekBtn').addEventListener('click', cancelWeek);
+
+  document.querySelectorAll('.workDayToggle').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.getAttribute('data-day'), 10);
+      standardWorkDays[idx] = e.target.checked;
+      saveStandardWorkDays(standardWorkDays);
+      renderWeekDayCards();
+    });
+  });
+}
+
 async function generateRoute() {
   const groupSel = document.getElementById('groupSelect');
   const group = groupSel.value;
+  const group2Raw = document.getElementById('groupSelect2').value;
+  const group2 = (group !== '__ANY__' && group2Raw && group2Raw !== group) ? group2Raw : null;
   const stopCount = parseInt(document.getElementById('stopCount').value, 10) || 0;
   const startAddrId = document.getElementById('startAddressSelect').value;
   const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
   const includeRecent = document.getElementById('includeRecent').checked;
+  const routeDirection = document.getElementById('routeDirection').value;
   const isMixMode = group === '__ANY__';
   const strictGroup = !isMixMode; // picking a specific group = stay in it by default; "Closest Mix" = ignore group boundaries
 
@@ -1104,79 +1674,20 @@ async function generateRoute() {
     if (!saved) { setScheduleStatus('That saved address could not be found — try re-adding it.', 'error'); return; }
     startCoords = { lat: saved.lat, lng: saved.lng };
 
-    const allEligible = getFilteredPatients().filter(p => p.lat !== null && p.lng !== null);
-    const eligible = includeRecent ? allEligible : allEligible.filter(p => !isRecentlyVisited(p, scheduleDate));
-    const excludedCount = allEligible.length - eligible.length;
+    const result = selectRoutePatients({ group, group2, stopCount, startCoords, scheduleDate, includeRecent, routeDirection });
+    if (result.error) { setScheduleStatus(result.error, 'error'); return; }
 
-    let pool;
-    let fillCount = 0;
-    let groupOnlyCount = 0;
-
-    if (strictGroup) {
-      // Old behavior: stay inside the selected group, only reaching outside it
-      // if the group itself can't fill the requested count.
-      const groupPatients = eligible.filter(p => p.group === group);
-      groupOnlyCount = groupPatients.length;
-      if (groupPatients.length === 0) {
-        setScheduleStatus(excludedCount > 0
-          ? `All patients in that group were visited within the last 30 days. Check "Include patients visited in the last 30 days" to override.`
-          : 'No geocoded patients in that group yet.', 'error');
-        return;
-      }
-      pool = groupPatients;
-      if (groupPatients.length < stopCount) {
-        const needed = stopCount - groupPatients.length;
-        const otherByDistance = eligible.filter(p => p.group !== group)
-          .map(p => ({ p, dist: haversineMiles(startCoords.lat, startCoords.lng, p.lat, p.lng) }))
-          .sort((a, b) => a.dist - b.dist)
-          .slice(0, needed)
-          .map(x => x.p);
-        pool = groupPatients.concat(otherByDistance);
-        fillCount = otherByDistance.length;
-      }
-    } else {
-      // Default: Group is just a starting hint, not a hard boundary. Pull the
-      // truly closest N patients from EVERYONE eligible, regardless of which
-      // group they're labeled — this is what actually minimizes driving.
-      pool = eligible;
-      if (pool.length === 0) {
-        setScheduleStatus(excludedCount > 0
-          ? `All eligible patients were visited within the last 30 days. Check "Include patients visited in the last 30 days" to override.`
-          : 'No geocoded patients available yet.', 'error');
-        return;
-      }
-    }
-
-    // Pick the N closest patients to the start point first (by straight-line
-    // distance), THEN order just those N for an efficient visiting sequence.
-    // Doing it the other way around (path-order the whole pool, take first N)
-    // can pull in a farther stop that only *looked* nearest at one greedy step.
-    const byDistance = pool
-      .map(p => ({ p, dist: haversineMiles(startCoords.lat, startCoords.lng, p.lat, p.lng) }))
-      .sort((a, b) => a.dist - b.dist);
-
-    let closestN = byDistance.slice(0, stopCount).map(x => x.p);
-
-    // Pull in anyone else at the same address OR same complex/building as a
-    // selected patient (couples, same complex) so they get scheduled together.
-    const addressMates = byDistance
-      .map(x => x.p)
-      .filter(p => !closestN.includes(p) && closestN.some(sel => isSameLocation(sel, p)));
-    closestN = closestN.concat(addressMates);
-
-    const remainder = byDistance.map(x => x.p).filter(p => !closestN.includes(p));
-
-    scheduledPatients = nearestNeighborOrder(startCoords.lat, startCoords.lng, closestN);
-    leftoverPatients = remainder;
+    scheduledPatients = result.scheduled;
+    leftoverPatients = result.leftover;
 
     document.getElementById('routeBuilderCard').style.display = 'block';
     await recalcAndRender();
-    const addedNote = addressMates.length > 0 ? ` (+${addressMates.length} same-address patient(s) added automatically.)` : '';
-    const excludedNote = excludedCount > 0 ? ` (${excludedCount} recently-visited patient(s) excluded.)` : '';
+    const addedNote = result.addressMateCount > 0 ? ` (+${result.addressMateCount} same-address patient(s) added automatically.)` : '';
+    const excludedNote = result.excludedCount > 0 ? ` (${result.excludedCount} recently-visited patient(s) excluded.)` : '';
     let statusMsg;
-    if (strictGroup) {
-      const fillNote = fillCount > 0 ? ` Group ${group} only had ${groupOnlyCount} available, so ${fillCount} nearby patient(s) from other groups were added to reach ${stopCount}.` : '';
-      statusMsg = `Route generated for Group ${group}.` + excludedNote + addedNote + fillNote;
+    if (result.strictGroup) {
+      const fillNote = result.fillCount > 0 ? ` Group ${group} only had ${result.groupOnlyCount} available, so ${result.fillCount} nearby patient(s) from other groups were added to reach ${stopCount}.` : '';
+      statusMsg = `Route generated for Group ${group}${group2 ? ' + ' + group2 : ''}.` + excludedNote + addedNote + fillNote;
     } else {
       const groupsUsed = Array.from(new Set(scheduledPatients.map(p => p.group || 'unassigned'))).sort();
       statusMsg = `Route generated: closest ${scheduledPatients.length} patient(s) to your starting address, drawn from group(s) ${groupsUsed.join(', ')}.` + excludedNote + addedNote;
@@ -1405,6 +1916,38 @@ function showOverageModal(hours, maxHours, onApprove, onGoBack) {
   goBackBtn.onclick = () => { cleanup(); if (onGoBack) onGoBack(); };
 }
 
+function downloadMyMapsCsv() {
+  if (scheduledPatients.length === 0) {
+    setScheduleStatus('Generate a route first.', 'error');
+    return;
+  }
+  const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
+  // Column order matters for My Maps' import step: it asks which column is
+  // the location, so Address needs to read clearly as a full address on its own.
+  const header = ['Stop', 'Name', 'Address', 'Arrival Time', 'Group'];
+  const escape = (v) => {
+    const s = (v ?? '').toString();
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [header.join(',')];
+  scheduledPatients.forEach((p, i) => {
+    lines.push([`#${i + 1}`, p.name, p.address, minutesToClock(p.arrivalMinutes), p.group || '']
+      .map(escape).join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mymaps-route-${scheduleDate}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  const help = document.getElementById('myMapsHelp');
+  help.style.display = 'block';
+  help.className = 'status-line success';
+  help.innerHTML = `CSV downloaded. To bring it into Google My Maps: go to <strong>mymaps.google.com</strong> → Create a new map (or open today's) → <strong>Import</strong> → upload this file → when asked which column has the location, choose <strong>Address</strong> → when asked which column to use as the pin title, choose <strong>Name</strong>. Pins will appear in visit order.`;
+}
+
 function openInGoogleMaps() {
   if (!startCoords || scheduledPatients.length === 0) {
     setScheduleStatus('Generate a route first.', 'error');
@@ -1431,6 +1974,7 @@ function cancelRoute() {
   startCoords = null;
   document.getElementById('routeBuilderCard').style.display = 'none';
   document.getElementById('routeSummary').innerHTML = '';
+  document.getElementById('myMapsHelp').style.display = 'none';
   if (leafletLayer) { leafletLayer.remove(); leafletLayer = null; }
   setScheduleStatus('Route cleared. Adjust your settings and generate again.', '');
 }
@@ -1439,8 +1983,10 @@ function wireScheduleUI() {
   document.getElementById('generateRouteBtn').addEventListener('click', generateRoute);
   document.getElementById('cancelRouteBtn').addEventListener('click', cancelRoute);
   document.getElementById('openGoogleMapsBtn').addEventListener('click', openInGoogleMaps);
+  document.getElementById('myMapsCsvBtn').addEventListener('click', downloadMyMapsCsv);
 
   document.getElementById('startAddressSelect').addEventListener('change', updateAddressFormVisibility);
+  document.getElementById('groupSelect').addEventListener('change', updateGroup2Availability);
   document.getElementById('saveNewAddressBtn').addEventListener('click', handleSaveNewAddress);
   document.getElementById('cancelNewAddressBtn').addEventListener('click', () => {
     document.getElementById('newAddressLabel').value = '';
@@ -1479,7 +2025,7 @@ function wireScheduleUI() {
     URL.revokeObjectURL(url);
   });
 
-  document.getElementById('approveScheduleBtn').addEventListener('click', async () => {
+  async function handleApproveClick() {
     const maxHours = parseFloat(document.getElementById('maxHours').value) || 7;
     const totalHours = await recalcAndRender();
     const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
@@ -1495,12 +2041,26 @@ function wireScheduleUI() {
       setScheduleStatus(`Schedule approved for ${scheduleDate} (${totalHours.toFixed(1)} hrs). Check the Home tab calendar to see it.`, 'success');
     };
 
-    if (totalHours > maxHours) {
-      showOverageModal(totalHours, maxHours, commit);
+    const proceedPastOverageCheck = () => {
+      if (totalHours > maxHours) {
+        showOverageModal(totalHours, maxHours, commit);
+      } else {
+        commit();
+      }
+    };
+
+    if (datesWithExistingSchedule([scheduleDate]).length > 0) {
+      showOverwriteConfirm(
+        `${scheduleDate} already has an approved schedule. Continuing will overwrite it with today's list — the prior schedule for this date will be replaced, not merged. Continue?`,
+        proceedPastOverageCheck
+      );
     } else {
-      commit();
+      proceedPastOverageCheck();
     }
-  });
+  }
+
+  document.getElementById('approveScheduleBtn').addEventListener('click', handleApproveClick);
+  document.getElementById('approveScheduleBtnTop').addEventListener('click', handleApproveClick);
 }
 
 /* ============================================
@@ -1581,17 +2141,46 @@ function loadSchedules() {
 function saveSchedules(obj) {
   localStorage.setItem(SCHEDULES_KEY, JSON.stringify(obj));
 }
+function datesWithExistingSchedule(dates) {
+  const schedules = loadSchedules();
+  return dates.filter(d => schedules[d] && schedules[d].length > 0);
+}
+
+function showOverwriteConfirm(message, onConfirm) {
+  const modal = document.getElementById('overwriteModal');
+  document.getElementById('overwriteText').textContent = message;
+  document.getElementById('overwriteActions').innerHTML = `
+    <button id="overwriteCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+    <button id="overwriteConfirmBtn" class="btn btn-primary" type="button">Yes, Overwrite</button>
+  `;
+  modal.style.display = 'flex';
+  document.getElementById('overwriteCancelBtn').addEventListener('click', () => { modal.style.display = 'none'; });
+  document.getElementById('overwriteConfirmBtn').addEventListener('click', () => {
+    modal.style.display = 'none';
+    onConfirm();
+  });
+}
+
 function recordApprovedSchedule(dateStr, list) {
   const schedules = loadSchedules();
   schedules[dateStr] = list.map(p => ({
     id: p.id, name: p.name, dob: p.dob, address: p.address,
-    group: p.group, provider: p.provider, arrivalMinutes: p.arrivalMinutes
+    group: p.group, provider: p.provider, arrivalMinutes: p.arrivalMinutes,
+    lat: p.lat, lng: p.lng
   }));
   saveSchedules(schedules);
 }
 
 function dateKey(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function hexToRgbaTint(color, alpha) {
+  if (!color || color.startsWith('hsl')) return color; // overflow-palette colors used as-is, no tint needed
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function renderCalendar() {
@@ -1621,10 +2210,23 @@ function renderCalendar() {
     const classes = ['cal-day'];
     if (count > 0) classes.push('cal-has-schedule');
     if (key === todayKey) classes.push('cal-today');
+
+    let styleAttr = '';
+    let dotsHtml = '';
+    if (count > 0) {
+      const groupsUsed = Array.from(new Set(dayList.map(p => p.group || 'unassigned')));
+      const primaryColor = groupColor(groupsUsed[0]);
+      styleAttr = `style="border-top: 4px solid ${primaryColor}; background: ${hexToRgbaTint(primaryColor, 0.22)};"`;
+      if (groupsUsed.length > 1) {
+        dotsHtml = `<div class="cal-day-dots">${groupsUsed.slice(0, 5).map(g => `<span class="cal-dot" style="background:${groupColor(g)}"></span>`).join('')}</div>`;
+      }
+    }
+
     html += `
-      <div class="${classes.join(' ')}" data-date="${key}" draggable="${count > 0}">
+      <div class="${classes.join(' ')}" data-date="${key}" draggable="${count > 0}" ${styleAttr}>
         <span class="cal-day-num">${d}</span>
         ${count > 0 ? `<span class="cal-day-count">${count}</span>` : ''}
+        ${dotsHtml}
       </div>
     `;
   }
@@ -1669,6 +2271,38 @@ function moveWholeDay(fromDate, toDate) {
   renderTable();
   renderCalendar();
 }
+
+window.openCalendarDayInGoogleMaps = function (dateStr) {
+  const schedules = loadSchedules();
+  const list = schedules[dateStr] || [];
+  if (list.length === 0) { alert('No stops to map for this day.'); return; }
+
+  // Older approved days may not have lat/lng stored on the entry itself —
+  // fall back to a live lookup by id against the current patient list.
+  const resolved = list
+    .map(entry => (entry.lat != null && entry.lng != null) ? entry : { ...entry, ...(patients.find(p => p.id === entry.id) || {}) })
+    .filter(e => e.lat != null && e.lng != null);
+
+  if (resolved.length === 0) { alert('Could not find coordinates for these patients — they may have been edited or removed since.'); return; }
+  if (resolved.length > 23) { alert('Google Maps supports up to ~23 stops in one link — this day has more.'); return; }
+
+  const savedAddrs = loadStartAddresses();
+  const destination = `${resolved[resolved.length - 1].lat},${resolved[resolved.length - 1].lng}`;
+  let origin, waypointStops;
+
+  if (savedAddrs.length > 0) {
+    origin = `${savedAddrs[0].lat},${savedAddrs[0].lng}`;
+    waypointStops = resolved.slice(0, -1);
+  } else {
+    origin = `${resolved[0].lat},${resolved[0].lng}`;
+    waypointStops = resolved.slice(1, -1);
+  }
+
+  const waypoints = waypointStops.map(s => `${s.lat},${s.lng}`).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  window.open(url, '_blank');
+};
 
 function showCalendarDay(dateStr) {
   const schedules = loadSchedules();
@@ -1724,31 +2358,46 @@ window.removeFromDaySchedule = function (dateStr, patientId) {
   showCalendarDay(dateStr);
 };
 
+let pendingDateChange = null;
+
 window.changePatientDate = function (dateStr, patientId) {
-  const newDate = prompt('Move this patient to which date? (YYYY-MM-DD)', dateStr);
-  if (!newDate || newDate === dateStr) return;
+  const master = patients.find(p => p.id === patientId);
+  pendingDateChange = { fromDate: dateStr, patientId, name: master ? master.name : 'this patient' };
+
+  document.getElementById('changeDateSubtitle').textContent = `Moving ${pendingDateChange.name} — currently on ${dateStr}`;
+  document.getElementById('changeDateInput').value = dateStr;
+  document.getElementById('changeDateModal').style.display = 'flex';
+};
+
+function commitPatientDateChange() {
+  if (!pendingDateChange) return;
+  const { fromDate, patientId } = pendingDateChange;
+  const newDate = document.getElementById('changeDateInput').value;
+  document.getElementById('changeDateModal').style.display = 'none';
+  if (!newDate || newDate === fromDate) { pendingDateChange = null; return; }
 
   const schedules = loadSchedules();
-  const list = schedules[dateStr];
-  if (!list) return;
+  const list = schedules[fromDate];
+  if (!list) { pendingDateChange = null; return; }
   const idx = list.findIndex(p => p.id === patientId);
-  if (idx === -1) return;
+  if (idx === -1) { pendingDateChange = null; return; }
   const [entry] = list.splice(idx, 1);
-  if (list.length === 0) delete schedules[dateStr];
+  if (list.length === 0) delete schedules[fromDate];
 
   if (!schedules[newDate]) schedules[newDate] = [];
   schedules[newDate].push(entry);
   saveSchedules(schedules);
 
   const master = patients.find(p => p.id === patientId);
-  if (master && master.lastVisitDate === dateStr) {
+  if (master && master.lastVisitDate === fromDate) {
     master.lastVisitDate = newDate;
     savePatients();
     renderTable();
   }
   renderCalendar();
-  showCalendarDay(dateStr);
-};
+  showCalendarDay(fromDate);
+  pendingDateChange = null;
+}
 
 function downloadScheduleCsv(entries, filename) {
   if (entries.length === 0) { alert('Nothing to export for that range.'); return; }
@@ -1757,11 +2406,30 @@ function downloadScheduleCsv(entries, filename) {
     const s = (v ?? '').toString();
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
+
+  // Group by date (each date's stops stay in their existing visit order),
+  // sorted chronologically, with a blank line between days for readability.
+  const byDate = {};
+  entries.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+  const dates = Object.keys(byDate).sort();
+
   const lines = [header.join(',')];
-  entries.forEach(e => {
-    lines.push([e.name, e.dob, e.date, e.arrivalMinutes !== undefined ? minutesToClock(e.arrivalMinutes) : '', e.provider || '']
-      .map(escape).join(','));
+  dates.forEach((date, dIdx) => {
+    if (dIdx > 0) lines.push('');
+    const dayEntries = byDate[date];
+    // Simplified hourly slots for the coordinator: first stop's real time
+    // rounded down to the hour, then +1 hour per stop after that — the
+    // precise real-road times still show inside PULSE itself, this export
+    // is just easier to scan at a glance.
+    const baseMinutes = dayEntries[0].arrivalMinutes !== undefined
+      ? Math.floor(dayEntries[0].arrivalMinutes / 60) * 60
+      : 8 * 60; // fallback: 8:00 AM if no time data
+    dayEntries.forEach((e, i) => {
+      const slotMinutes = baseMinutes + i * 60;
+      lines.push([e.name, e.dob, e.date, minutesToClock(slotMinutes), e.provider || ''].map(escape).join(','));
+    });
   });
+
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1825,6 +2493,9 @@ function wireCalendarUI() {
   document.getElementById('dayDetailBack').addEventListener('click', () => {
     document.getElementById('dayDetailModal').style.display = 'none';
   });
+  document.getElementById('dayDetailCloseX').addEventListener('click', () => {
+    document.getElementById('dayDetailModal').style.display = 'none';
+  });
   document.getElementById('exportMonthBtn').addEventListener('click', exportMonthSchedule);
   document.getElementById('exportDayBtn').addEventListener('click', () => {
     const modal = document.getElementById('dayDetailModal');
@@ -1835,6 +2506,16 @@ function wireCalendarUI() {
     const modal = document.getElementById('dayDetailModal');
     const dateStr = modal.getAttribute('data-current-date');
     if (dateStr) exportWeekSchedule(dateStr);
+  });
+  document.getElementById('dayDetailGoogleMapsBtn').addEventListener('click', () => {
+    const modal = document.getElementById('dayDetailModal');
+    const dateStr = modal.getAttribute('data-current-date');
+    if (dateStr) openCalendarDayInGoogleMaps(dateStr);
+  });
+  document.getElementById('changeDateConfirmBtn').addEventListener('click', commitPatientDateChange);
+  document.getElementById('changeDateCancelBtn').addEventListener('click', () => {
+    document.getElementById('changeDateModal').style.display = 'none';
+    pendingDateChange = null;
   });
 }
 
@@ -1874,6 +2555,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   wireScheduleUI();
+  wireWeeklyUI();
   wireCalendarUI();
   wireEditModal();
   renderCalendar();
@@ -1927,6 +2609,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('clearAllBtn').addEventListener('click', showClearAllStep1);
 
   document.getElementById('addManualRowBtn').addEventListener('click', addManualRow);
+  document.getElementById('clientsSearchInput').addEventListener('input', renderTable);
+  document.getElementById('scheduleSearchInput').addEventListener('input', (e) => renderScheduleSearchResults(e.target.value.trim()));
   document.getElementById('submitManualAddBtn').addEventListener('click', submitManualAdd);
   addManualRow(); // start with one blank row
 
