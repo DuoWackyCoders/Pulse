@@ -55,6 +55,90 @@
   --shadow-lift: 0 10px 32px rgba(255, 111, 168, 0.15);
 }
 
+[data-theme="corporate"] {
+  --bg: #F4F6FA;
+  --surface: #FFFFFF;
+  --surface-alt: #EAF0F8;
+  --border: #D3DEEA;
+
+  --peach: #4C6FFF;
+  --peach-deep: #3B57E0;
+  --pink: #2FB6C4;
+  --pink-deep: #1F97A3;
+  --lime: #34A853;
+  --lime-deep: #1E8E3E;
+
+  --text: #1A2333;
+  --text-soft: #64748B;
+  --text-on-accent: #FFFFFF;
+
+  --shadow: 0 4px 16px rgba(30, 50, 90, 0.10);
+  --shadow-lift: 0 8px 28px rgba(30, 50, 90, 0.16);
+}
+
+[data-theme="military"] {
+  --bg: #23261F;
+  --surface: #2E3226;
+  --surface-alt: #3A3F2F;
+  --border: #4A5039;
+
+  --peach: #6B7A4F;
+  --peach-deep: #556140;
+  --pink: #C9A050;
+  --pink-deep: #A6813E;
+  --lime: #8FA05C;
+  --lime-deep: #6F7F45;
+
+  --text: #E8E4D5;
+  --text-soft: #A8A594;
+  --text-on-accent: #1A1C15;
+
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="mecha"] {
+  --bg: #F0F3F7;
+  --surface: #FFFFFF;
+  --surface-alt: #E3EAF2;
+  --border: #C7D3E0;
+
+  --peach: #2B5FAD;
+  --peach-deep: #1D4685;
+  --pink: #D6432F;
+  --pink-deep: #B4331F;
+  --lime: #E8B800;
+  --lime-deep: #C49A00;
+
+  --text: #1B2530;
+  --text-soft: #5B6B7D;
+  --text-on-accent: #FFFFFF;
+
+  --shadow: 0 4px 16px rgba(30, 60, 110, 0.12);
+  --shadow-lift: 0 8px 28px rgba(30, 60, 110, 0.18);
+}
+
+[data-theme="bitcoin"] {
+  --bg: #12100C;
+  --surface: #1C1912;
+  --surface-alt: #26221A;
+  --border: #3A3324;
+
+  --peach: #F7931A;
+  --peach-deep: #D97D0A;
+  --pink: #FFC94D;
+  --pink-deep: #E0AC2E;
+  --lime: #4CAF50;
+  --lime-deep: #388E3C;
+
+  --text: #F5EFE0;
+  --text-soft: #A89B7E;
+  --text-on-accent: #1A1408;
+
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-lift: 0 10px 32px rgba(247, 147, 26, 0.2);
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -829,18 +913,30 @@ input[type="range"] {
 .btn-tiny.btn-tiny-danger:hover { background: var(--pink); color: var(--text-on-accent); }
 
 [data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
-[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator {
+[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="military"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="military"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="bitcoin"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="bitcoin"] input[type="time"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
-[data-theme="dark"] .btn-tiny {
+[data-theme="dark"] .btn-tiny,
+[data-theme="military"] .btn-tiny,
+[data-theme="bitcoin"] .btn-tiny {
   background: var(--peach);
   color: var(--text-on-accent);
   border-color: transparent;
 }
-[data-theme="dark"] .btn-tiny:hover { background: var(--pink); }
-[data-theme="dark"] .btn-tiny.btn-tiny-danger { background: var(--pink); }
-[data-theme="dark"] .btn-tiny.btn-tiny-danger:hover { background: var(--pink-deep); }
+[data-theme="dark"] .btn-tiny:hover,
+[data-theme="military"] .btn-tiny:hover,
+[data-theme="bitcoin"] .btn-tiny:hover { background: var(--pink); }
+[data-theme="dark"] .btn-tiny.btn-tiny-danger,
+[data-theme="military"] .btn-tiny.btn-tiny-danger,
+[data-theme="bitcoin"] .btn-tiny.btn-tiny-danger { background: var(--pink); }
+[data-theme="dark"] .btn-tiny.btn-tiny-danger:hover,
+[data-theme="military"] .btn-tiny.btn-tiny-danger:hover,
+[data-theme="bitcoin"] .btn-tiny.btn-tiny-danger:hover { background: var(--pink-deep); }
 
 /* ============================================
    DAILY / WEEKLY MODE TOGGLE
