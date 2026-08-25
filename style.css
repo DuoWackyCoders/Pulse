@@ -139,6 +139,90 @@
   --shadow-lift: 0 10px 32px rgba(247, 147, 26, 0.2);
 }
 
+[data-theme="dracula"] {
+  --bg: #282A36;
+  --surface: #2F3242;
+  --surface-alt: #383A59;
+  --border: #44475A;
+
+  --peach: #BD93F9;
+  --peach-deep: #A87FE8;
+  --pink: #FF79C6;
+  --pink-deep: #FF5FBA;
+  --lime: #50FA7B;
+  --lime-deep: #3FE868;
+
+  --text: #F8F8F2;
+  --text-soft: #A9ABC9;
+  --text-on-accent: #1E1F29;
+
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-lift: 0 10px 32px rgba(189, 147, 249, 0.2);
+}
+
+[data-theme="nord"] {
+  --bg: #2E3440;
+  --surface: #3B4252;
+  --surface-alt: #434C5E;
+  --border: #4C566A;
+
+  --peach: #88C0D0;
+  --peach-deep: #6FA9BA;
+  --pink: #B48EAD;
+  --pink-deep: #9E76A0;
+  --lime: #A3BE8C;
+  --lime-deep: #8CAE71;
+
+  --text: #ECEFF4;
+  --text-soft: #B8C0D0;
+  --text-on-accent: #1E242E;
+
+  --shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 10px 30px rgba(136, 192, 208, 0.18);
+}
+
+[data-theme="solarized"] {
+  --bg: #002B36;
+  --surface: #073642;
+  --surface-alt: #0A4152;
+  --border: #0F5468;
+
+  --peach: #2AA198;
+  --peach-deep: #22857D;
+  --pink: #D33682;
+  --pink-deep: #B22A6D;
+  --lime: #859900;
+  --lime-deep: #6D7D00;
+
+  --text: #93A1A1;
+  --text-soft: #657B83;
+  --text-on-accent: #002B36;
+
+  --shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lift: 0 10px 30px rgba(42, 161, 152, 0.2);
+}
+
+[data-theme="gruvbox"] {
+  --bg: #282828;
+  --surface: #32302F;
+  --surface-alt: #3C3836;
+  --border: #504945;
+
+  --peach: #FE8019;
+  --peach-deep: #D65D0E;
+  --pink: #D3869B;
+  --pink-deep: #B16286;
+  --lime: #B8BB26;
+  --lime-deep: #98971A;
+
+  --text: #EBDBB2;
+  --text-soft: #BDAE93;
+  --text-on-accent: #282828;
+
+  --shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 10px 30px rgba(254, 128, 25, 0.2);
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -610,6 +694,7 @@ input[type="range"] {
   font-weight: 600;
   font-size: 0.82rem;
   color: var(--text-soft);
+  min-width: 0;
 }
 
 .field input,
@@ -621,6 +706,9 @@ input[type="range"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 9px 10px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .field input:focus,
 .field select:focus {
@@ -917,26 +1005,50 @@ input[type="range"] {
 [data-theme="military"] input[type="date"]::-webkit-calendar-picker-indicator,
 [data-theme="military"] input[type="time"]::-webkit-calendar-picker-indicator,
 [data-theme="bitcoin"] input[type="date"]::-webkit-calendar-picker-indicator,
-[data-theme="bitcoin"] input[type="time"]::-webkit-calendar-picker-indicator {
+[data-theme="bitcoin"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="dracula"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="dracula"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="nord"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="nord"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="solarized"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="solarized"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="gruvbox"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="gruvbox"] input[type="time"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
 [data-theme="dark"] .btn-tiny,
 [data-theme="military"] .btn-tiny,
-[data-theme="bitcoin"] .btn-tiny {
+[data-theme="bitcoin"] .btn-tiny,
+[data-theme="dracula"] .btn-tiny,
+[data-theme="nord"] .btn-tiny,
+[data-theme="solarized"] .btn-tiny,
+[data-theme="gruvbox"] .btn-tiny {
   background: var(--peach);
   color: var(--text-on-accent);
   border-color: transparent;
 }
 [data-theme="dark"] .btn-tiny:hover,
 [data-theme="military"] .btn-tiny:hover,
-[data-theme="bitcoin"] .btn-tiny:hover { background: var(--pink); }
+[data-theme="bitcoin"] .btn-tiny:hover,
+[data-theme="dracula"] .btn-tiny:hover,
+[data-theme="nord"] .btn-tiny:hover,
+[data-theme="solarized"] .btn-tiny:hover,
+[data-theme="gruvbox"] .btn-tiny:hover { background: var(--pink); }
 [data-theme="dark"] .btn-tiny.btn-tiny-danger,
 [data-theme="military"] .btn-tiny.btn-tiny-danger,
-[data-theme="bitcoin"] .btn-tiny.btn-tiny-danger { background: var(--pink); }
+[data-theme="bitcoin"] .btn-tiny.btn-tiny-danger,
+[data-theme="dracula"] .btn-tiny.btn-tiny-danger,
+[data-theme="nord"] .btn-tiny.btn-tiny-danger,
+[data-theme="solarized"] .btn-tiny.btn-tiny-danger,
+[data-theme="gruvbox"] .btn-tiny.btn-tiny-danger { background: var(--pink); }
 [data-theme="dark"] .btn-tiny.btn-tiny-danger:hover,
 [data-theme="military"] .btn-tiny.btn-tiny-danger:hover,
-[data-theme="bitcoin"] .btn-tiny.btn-tiny-danger:hover { background: var(--pink-deep); }
+[data-theme="bitcoin"] .btn-tiny.btn-tiny-danger:hover,
+[data-theme="dracula"] .btn-tiny.btn-tiny-danger:hover,
+[data-theme="nord"] .btn-tiny.btn-tiny-danger:hover,
+[data-theme="solarized"] .btn-tiny.btn-tiny-danger:hover,
+[data-theme="gruvbox"] .btn-tiny.btn-tiny-danger:hover { background: var(--pink-deep); }
 
 /* ============================================
    DAILY / WEEKLY MODE TOGGLE
