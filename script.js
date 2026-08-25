@@ -1920,6 +1920,12 @@ async function recalcAndRender() {
       p.travelMiles = 0;
       p.travelMinutes = 0;
     }
+    // A manually-edited arrival time (known delay, traffic, a chatty prior
+    // visit) becomes the new anchor — every stop after it cascades forward
+    // from here instead of the originally-computed time.
+    if (p.manualArrivalOverride != null) {
+      cursorMinutes = p.manualArrivalOverride;
+    }
     p.arrivalMinutes = cursorMinutes;
     p.visitDuration = p.visitDuration || visitDuration;
     cursorMinutes += p.visitDuration;
@@ -1956,6 +1962,13 @@ function minutesToClock(totalMinutes) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function minutesToTimeInputValue(totalMinutes) {
+  const wrapped = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+  const h = Math.floor(wrapped / 60);
+  const m = wrapped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function renderScheduleLists() {
   const schedEl = document.getElementById('scheduledList');
   const leftEl = document.getElementById('leftoverList');
@@ -1987,7 +2000,7 @@ function dragItemHtml(p, listName, index, showTime) {
     <li class="drag-item${highlightClass}" draggable="true" data-id="${p.id}" data-list="${listName}" data-index="${index}">
       <div class="di-name">#${index + 1} ${escapeHtml(p.name)}${p.group ? ` <span style="color:var(--text-soft); font-weight:600; font-size:0.8em;">(Grp- ${escapeHtml(p.group)})</span>` : ''}</div>
       <div class="di-meta">${escapeHtml(p.dob)} — ${escapeHtml(p.address)}</div>
-      ${showTime && p.arrivalMinutes !== undefined ? `<div class="di-time">${minutesToClock(p.arrivalMinutes)}${p.travelMinutes ? ` <span style="color:var(--text-soft); font-weight:600;">(🚗 ${Math.round(p.travelMinutes)} min / ${p.travelMiles.toFixed(1)} mi)</span>` : ' <span style="color:var(--text-soft); font-weight:600;">(same address)</span>'}</div>` : ''}
+      ${showTime && p.arrivalMinutes !== undefined ? `<div class="di-time">${minutesToClock(p.arrivalMinutes)}${p.manualArrivalOverride != null ? ' <span style="color:var(--pink-deep); font-weight:700; font-size:0.75em;">(edited)</span>' : ''}${p.travelMinutes ? ` <span style="color:var(--text-soft); font-weight:600;">(🚗 ${Math.round(p.travelMinutes)} min / ${p.travelMiles.toFixed(1)} mi)</span>` : ' <span style="color:var(--text-soft); font-weight:600;">(same address)</span>'} <button type="button" class="btn-tiny" style="margin-left:4px;" onclick="window.openEditArrivalLive('${p.id}')">✏️</button></div>` : ''}
     </li>
   `;
 }
@@ -2110,7 +2123,7 @@ function openInGoogleMaps() {
   window.open(url, '_blank');
 }
 
-function cancelRoute() {
+function resetRouteBuilderUI() {
   scheduledPatients = [];
   leftoverPatients = [];
   startCoords = null;
@@ -2118,6 +2131,10 @@ function cancelRoute() {
   document.getElementById('routeSummary').innerHTML = '';
   document.getElementById('myMapsHelp').style.display = 'none';
   if (leafletLayer) { leafletLayer.remove(); leafletLayer = null; }
+}
+
+function cancelRoute() {
+  resetRouteBuilderUI();
   setScheduleStatus('Route cleared. Adjust your settings and generate again.', '');
 }
 
@@ -2185,7 +2202,8 @@ function wireScheduleUI() {
       savePatients();
       renderTable();
       recordApprovedSchedule(scheduleDate, scheduledPatients);
-      setScheduleStatus(`Schedule approved for ${scheduleDate} (${totalHours.toFixed(1)} hrs). Check the Home tab calendar to see it.`, 'success');
+      setScheduleStatus(`✅ Schedule approved for ${scheduleDate} (${totalHours.toFixed(1)} hrs). Check the Home tab calendar to see it. Ready for the next route.`, 'success');
+      resetRouteBuilderUI();
     };
 
     const proceedPastOverageCheck = () => {
@@ -2527,9 +2545,90 @@ function showCalendarDay(dateStr) {
       <div class="item-actions">
         <button type="button" class="btn-tiny btn-tiny-danger" onclick="window.removeFromDaySchedule('${dateStr}','${p.id}')">↩️ Remove to Leftover</button>
         <button type="button" class="btn-tiny" onclick="window.changePatientDate('${dateStr}','${p.id}')">🗓️ Change Date</button>
+        <button type="button" class="btn-tiny" onclick="window.openEditArrivalCalendar('${dateStr}','${p.id}')">✏️ Edit Time</button>
       </div>
     </div>
   `).join('');
+}
+
+let pendingArrivalEdit = null; // { context: 'live' | 'calendar', patientId, dateStr }
+
+function minutesToTimeInputValue(totalMinutes) {
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = Math.round(totalMinutes % 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+function timeInputValueToMinutes(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+window.openEditArrivalLive = function (patientId) {
+  const p = scheduledPatients.find(sp => sp.id === patientId);
+  if (!p || p.arrivalMinutes === undefined) return;
+  pendingArrivalEdit = { context: 'live', patientId };
+
+  document.getElementById('editArrivalSubtitle').textContent = `${p.name} — scheduled arrival, adjust for known delays (traffic, a longer prior visit, etc.)`;
+  document.getElementById('editArrivalInput').value = minutesToTimeInputValue(p.arrivalMinutes);
+  document.getElementById('editArrivalNote').textContent = 'Everyone after this stop will shift to start from the new time.';
+  document.getElementById('editArrivalNote').className = 'status-line';
+  document.getElementById('editArrivalResetBtn').style.display = p.manualArrivalOverride != null ? 'inline-block' : 'none';
+  document.getElementById('editArrivalModal').style.display = 'flex';
+};
+
+window.openEditArrivalCalendar = function (dateStr, patientId) {
+  const schedules = loadSchedules();
+  const list = schedules[dateStr] || [];
+  const entry = list.find(p => p.id === patientId);
+  if (!entry || entry.arrivalMinutes === undefined) return;
+  pendingArrivalEdit = { context: 'calendar', patientId, dateStr };
+
+  document.getElementById('editArrivalSubtitle').textContent = `${entry.name} — record the actual arrival time for this visit.`;
+  document.getElementById('editArrivalInput').value = minutesToTimeInputValue(entry.arrivalMinutes);
+  document.getElementById('editArrivalNote').textContent = 'Every patient scheduled after this one that day will shift by the same amount (e.g. this visit ran long, so the rest of the day moves too).';
+  document.getElementById('editArrivalNote').className = 'status-line';
+  document.getElementById('editArrivalResetBtn').style.display = 'none';
+  document.getElementById('editArrivalModal').style.display = 'flex';
+};
+
+async function commitArrivalEdit() {
+  if (!pendingArrivalEdit) return;
+  const newMinutes = timeInputValueToMinutes(document.getElementById('editArrivalInput').value);
+
+  if (pendingArrivalEdit.context === 'live') {
+    const p = scheduledPatients.find(sp => sp.id === pendingArrivalEdit.patientId);
+    if (p) {
+      p.manualArrivalOverride = newMinutes;
+      document.getElementById('editArrivalModal').style.display = 'none';
+      pendingArrivalEdit = null;
+      await recalcAndRender();
+    }
+  } else {
+    const schedules = loadSchedules();
+    const list = schedules[pendingArrivalEdit.dateStr] || [];
+    const idx = list.findIndex(p => p.id === pendingArrivalEdit.patientId);
+    if (idx !== -1) {
+      const oldMinutes = list[idx].arrivalMinutes;
+      const delta = newMinutes - oldMinutes;
+      for (let i = idx; i < list.length; i++) {
+        if (list[i].arrivalMinutes !== undefined) list[i].arrivalMinutes += delta;
+      }
+      saveSchedules(schedules);
+    }
+    document.getElementById('editArrivalModal').style.display = 'none';
+    const dateStr = pendingArrivalEdit.dateStr;
+    pendingArrivalEdit = null;
+    showCalendarDay(dateStr);
+  }
+}
+
+async function resetArrivalOverride() {
+  if (!pendingArrivalEdit || pendingArrivalEdit.context !== 'live') return;
+  const p = scheduledPatients.find(sp => sp.id === pendingArrivalEdit.patientId);
+  if (p) delete p.manualArrivalOverride;
+  document.getElementById('editArrivalModal').style.display = 'none';
+  pendingArrivalEdit = null;
+  await recalcAndRender();
 }
 
 window.removeFromDaySchedule = function (dateStr, patientId) {
@@ -2710,6 +2809,12 @@ function wireCalendarUI() {
   document.getElementById('changeDateCancelBtn').addEventListener('click', () => {
     document.getElementById('changeDateModal').style.display = 'none';
     pendingDateChange = null;
+  });
+  document.getElementById('editArrivalSaveBtn').addEventListener('click', commitArrivalEdit);
+  document.getElementById('editArrivalResetBtn').addEventListener('click', resetArrivalOverride);
+  document.getElementById('editArrivalCancelBtn').addEventListener('click', () => {
+    document.getElementById('editArrivalModal').style.display = 'none';
+    pendingArrivalEdit = null;
   });
   document.getElementById('cancelDayScheduleBtn').addEventListener('click', () => {
     const modal = document.getElementById('dayDetailModal');
