@@ -88,9 +88,12 @@
           <input type="date" id="scheduleDate">
         </label>
         <label class="field">Starting address (home base)
-          <select id="startAddressSelect">
-            <option value="">+ Add new address...</option>
-          </select>
+          <div style="display:flex; gap:8px;">
+            <select id="startAddressSelect" style="flex:1;">
+              <option value="">+ Add new address...</option>
+            </select>
+            <button id="showAddAddressBtn" class="btn btn-secondary" type="button" style="white-space:nowrap;">➕ Add</button>
+          </div>
         </label>
         <div id="newAddressForm" class="field" style="display:none; grid-column: 1 / -1;">
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -350,7 +353,11 @@
       </div>
     </div>
 
-    <input type="text" id="clientsSearchInput" placeholder="🔍 Search patients by name..." style="width:100%; font-family: var(--font-mono); font-size:0.9rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text); margin-bottom:16px;">
+    <div style="position:relative; margin-bottom:8px;">
+      <input type="text" id="clientsSearchInput" placeholder="🔍 Search patients by name..." autocomplete="off" style="width:100%; font-family: var(--font-mono); font-size:0.9rem; padding:10px 40px 10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+      <button type="button" id="clientsSearchClearX" style="display:none; position:absolute; right:8px; top:50%; transform:translateY(-50%); width:24px; height:24px; border-radius:50%; border:none; background:var(--border); color:var(--text); font-size:0.85rem; cursor:pointer; line-height:1;">✕</button>
+    </div>
+    <div id="clientsFilterCount" style="display:none; margin-bottom:16px;"></div>
 
     <div id="emptyState" class="empty-state">
       <p>No patients yet.</p>
@@ -402,6 +409,7 @@
     <input type="file" id="addFileInput" accept=".csv">
 
     <div class="upload-actions">
+      <button id="downloadTemplateBtn" class="btn btn-secondary" type="button">📄 Download blank template</button>
       <button id="addCsvBtn" class="btn btn-secondary" type="button">➕ Add another CSV</button>
       <button id="downloadCsvBtn" class="btn btn-secondary" type="button">⬇️ Download current list as CSV</button>
       <button id="clearAllBtn" class="btn btn-ghost" type="button">Clear all</button>
@@ -529,6 +537,10 @@
         <option value="military">🎖️ Military Tactical</option>
         <option value="mecha">🤖 Mecha Blue</option>
         <option value="bitcoin">₿ Bitcoin Gold</option>
+        <option value="dracula">🧛 Dracula</option>
+        <option value="nord">❄️ Nord</option>
+        <option value="solarized">🌊 Solarized</option>
+        <option value="gruvbox">🍂 Gruvbox</option>
       </select>
     </section>
 
@@ -551,9 +563,15 @@
     </section>
 
     <section class="card">
-      <h2 class="card-title">Saved starting addresses (home/office)</h2>
-      <p class="card-subtitle">Managed on the Schedule tab's "Starting address" dropdown — add, edit, or remove them there. Listed here for a quick check.</p>
-      <div id="adminAddressList"></div>
+      <h2 class="card-title">Starting addresses (home, office, hospital, hub...)</h2>
+      <p class="card-subtitle">Add as many as you need — pick which one to use each time on the Schedule tab.</p>
+      <div id="adminAddressList" style="margin-bottom:14px;"></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="text" id="adminNewAddressLabel" placeholder="Label (e.g. Office, Hospital Hub)" style="flex:1; min-width:160px; font-family: var(--font-mono); font-size:0.85rem; padding:9px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+        <input type="text" id="adminNewAddressText" placeholder="Full address" style="flex:2; min-width:220px; font-family: var(--font-mono); font-size:0.85rem; padding:9px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+        <button id="adminAddAddressBtn" class="btn btn-primary" type="button">Add</button>
+      </div>
+      <p id="adminAddressStatus" class="status-line"></p>
     </section>
 
   </div>
