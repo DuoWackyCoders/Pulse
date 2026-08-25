@@ -53,9 +53,11 @@ function loadPatients() {
 function savePatients() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+    return true;
   } catch (e) {
     console.error('Failed to save patients to storage', e);
     setStatus('Could not save — your browser storage may be full.', 'error');
+    return false;
   }
 }
 function loadGroupSizeMax() {
@@ -584,7 +586,23 @@ function renderTable() {
 
   const searchInput = document.getElementById('clientsSearchInput');
   const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
-  const displayed = getFilteredPatients().filter(p => !searchTerm || p.name.toLowerCase().includes(searchTerm));
+  const providerScoped = getFilteredPatients();
+  const displayed = providerScoped.filter(p => !searchTerm || p.name.toLowerCase().includes(searchTerm));
+
+  const countEl = document.getElementById('clientsFilterCount');
+  if (countEl) {
+    const isFiltered = displayed.length !== patients.length;
+    if (isFiltered) {
+      const reasons = [];
+      if (activeProviderFilter) reasons.push(`Viewing as: ${activeProviderFilter}`);
+      if (searchTerm) reasons.push(`search: "${searchInput.value.trim()}"`);
+      countEl.innerHTML = `⚠️ Showing ${displayed.length} of ${patients.length} patients (${reasons.join(', ')}) — <button type="button" id="clearClientsFiltersBtn" class="btn-tiny">Clear filters</button>`;
+      countEl.style.display = 'block';
+      countEl.className = 'status-line error';
+    } else {
+      countEl.style.display = 'none';
+    }
+  }
 
   if (displayed.length === 0) {
     tableWrap.style.display = 'none';
@@ -775,6 +793,25 @@ function resetManualRows() {
   addManualRow();
 }
 
+function checkHiddenByCurrentView(addedList) {
+  const reasons = [];
+  if (activeProviderFilter) {
+    const hiddenByProvider = addedList.filter(p => p.provider !== activeProviderFilter);
+    if (hiddenByProvider.length > 0) {
+      reasons.push(`${hiddenByProvider.length} won't show under "Viewing as: ${activeProviderFilter}" (their Provider field doesn't match) — switch to "All Providers" to see them`);
+    }
+  }
+  const searchInput = document.getElementById('clientsSearchInput');
+  const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  if (searchTerm) {
+    const hiddenBySearch = addedList.filter(p => !p.name.toLowerCase().includes(searchTerm));
+    if (hiddenBySearch.length > 0) {
+      reasons.push(`${hiddenBySearch.length} won't show under the current Clients search — clear the search box to see them`);
+    }
+  }
+  return reasons;
+}
+
 async function submitManualAdd() {
   const rows = document.querySelectorAll('.manual-row');
   const candidates = [];
@@ -807,15 +844,22 @@ async function submitManualAdd() {
   });
 
   patients = patients.concat(toAdd);
-  savePatients();
+  const saveOk = savePatients();
   renderTable();
   renderGroupSummary();
   populateProviderFilter();
   resetManualRows();
 
   const statusEl = document.getElementById('manualAddStatus');
-  statusEl.textContent = `Added ${toAdd.length} patient(s).` + (skipped > 0 ? ` Skipped ${skipped} duplicate(s).` : '') + ' Geocoding now...';
-  statusEl.className = 'status-line success';
+  if (!saveOk) {
+    statusEl.textContent = 'Save failed — your browser storage may be full. The patient(s) may not persist after reload.';
+    statusEl.className = 'status-line error';
+  } else {
+    const hiddenReasons = checkHiddenByCurrentView(toAdd);
+    const hiddenNote = hiddenReasons.length > 0 ? ' ⚠️ ' + hiddenReasons.join('; ') + '.' : '';
+    statusEl.textContent = `Added ${toAdd.length} patient(s).` + (skipped > 0 ? ` Skipped ${skipped} duplicate(s).` : '') + hiddenNote + ' Geocoding now...';
+    statusEl.className = 'status-line' + (hiddenNote ? ' error' : ' success');
+  }
 
   await geocodeAllPending();
 }
@@ -830,8 +874,10 @@ function handleFile(file, mode) {
       return;
     }
     let skippedDupes = 0;
+    let justAdded;
     if (mode === 'replace') {
       patients = parsed;
+      justAdded = parsed;
     } else {
       const toAdd = [];
       parsed.forEach(candidate => {
@@ -842,13 +888,20 @@ function handleFile(file, mode) {
         }
       });
       patients = patients.concat(toAdd);
+      justAdded = toAdd;
     }
-    savePatients();
+    const saveOk = savePatients();
     renderTable();
     renderGroupSummary();
     populateProviderFilter();
     const addedCount = parsed.length - skippedDupes;
-    setStatus(`Loaded ${addedCount} patient(s).` + (skippedDupes > 0 ? ` Skipped ${skippedDupes} duplicate(s) (matching name, address, and DOB).` : '') + ' Geocoding addresses next...', 'success');
+    if (!saveOk) {
+      setStatus('Save failed — your browser storage may be full. This data may not persist after reload.', 'error');
+    } else {
+      const hiddenReasons = checkHiddenByCurrentView(justAdded);
+      const hiddenNote = hiddenReasons.length > 0 ? ' ⚠️ ' + hiddenReasons.join('; ') + '.' : '';
+      setStatus(`Loaded ${addedCount} patient(s).` + (skippedDupes > 0 ? ` Skipped ${skippedDupes} duplicate(s) (matching name, address, and DOB).` : '') + hiddenNote + ' Geocoding addresses next...', hiddenNote ? 'error' : 'success');
+    }
     await geocodeAllPending();
   };
   reader.onerror = () => setStatus('Could not read that file.', 'error');
@@ -1080,27 +1133,41 @@ function updateAddressFormVisibility() {
   if (sel && form) form.style.display = sel.value === '' ? 'flex' : 'none';
 }
 
-async function handleSaveNewAddress() {
-  const label = document.getElementById('newAddressLabel').value.trim() || 'Home base';
-  const address = document.getElementById('newAddressText').value.trim();
-  if (!address) { setScheduleStatus('Enter an address to save.', 'error'); return; }
-
-  setScheduleStatus('Looking up that address...', '');
+async function addStartAddress(label, address, statusEl) {
+  if (!address) { if (statusEl) { statusEl.textContent = 'Enter an address to save.'; statusEl.className = 'status-line error'; } return null; }
+  if (statusEl) { statusEl.textContent = 'Looking up that address...'; statusEl.className = 'status-line'; }
   try {
     const coords = await geocodeAddress(address);
-    if (!coords) { setScheduleStatus('Could not find that address.', 'error'); return; }
+    if (!coords) { if (statusEl) { statusEl.textContent = 'Could not find that address.'; statusEl.className = 'status-line error'; } return null; }
     const saved = loadStartAddresses();
-    const entry = { id: 'a_' + Date.now(), label, address, lat: coords.lat, lng: coords.lng };
+    const entry = { id: 'a_' + Date.now(), label: label || 'Location', address, lat: coords.lat, lng: coords.lng };
     saved.push(entry);
     saveStartAddresses(saved);
     populateStartAddressSelect();
+    if (statusEl) { statusEl.textContent = 'Address saved.'; statusEl.className = 'status-line success'; }
+    return entry;
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Error looking up that address.'; statusEl.className = 'status-line error'; }
+    return null;
+  }
+}
+
+function deleteStartAddress(id) {
+  const saved = loadStartAddresses().filter(a => a.id !== id);
+  saveStartAddresses(saved);
+  populateStartAddressSelect();
+}
+
+async function handleSaveNewAddress() {
+  const label = document.getElementById('newAddressLabel').value.trim() || 'Home base';
+  const address = document.getElementById('newAddressText').value.trim();
+  const statusEl = document.getElementById('scheduleStatus');
+  const entry = await addStartAddress(label, address, statusEl);
+  if (entry) {
     document.getElementById('startAddressSelect').value = entry.id;
     document.getElementById('newAddressForm').style.display = 'none';
     document.getElementById('newAddressLabel').value = '';
     document.getElementById('newAddressText').value = '';
-    setScheduleStatus('Address saved.', 'success');
-  } catch (e) {
-    setScheduleStatus('Error looking up that address.', 'error');
   }
 }
 
@@ -1645,12 +1712,27 @@ function populateAdminTab() {
   const sel = document.getElementById('themeSelect');
   if (sel) sel.value = document.documentElement.getAttribute('data-theme') || 'light';
 
+  renderAdminAddressList();
+}
+
+function renderAdminAddressList() {
   const addrList = document.getElementById('adminAddressList');
   const saved = loadStartAddresses();
   addrList.innerHTML = saved.length === 0
-    ? '<p class="status-line">No saved addresses yet — add one on the Schedule tab.</p>'
-    : saved.map(a => `<div class="search-result-row"><span>${escapeHtml(a.label)} — ${escapeHtml(a.address)}</span></div>`).join('');
+    ? '<p class="status-line">No saved addresses yet — add one below.</p>'
+    : saved.map(a => `
+        <div class="search-result-row">
+          <span>${escapeHtml(a.label)} — ${escapeHtml(a.address)}</span>
+          <button type="button" class="btn-tiny btn-tiny-danger" onclick="window.deleteAdminAddress('${a.id}')">✖ Remove</button>
+        </div>
+      `).join('');
 }
+
+window.deleteAdminAddress = function (id) {
+  if (!confirm('Remove this starting address?')) return;
+  deleteStartAddress(id);
+  renderAdminAddressList();
+};
 
 function wireAdminTab() {
   document.getElementById('themeSelect').addEventListener('change', (e) => applyTheme(e.target.value));
@@ -1664,6 +1746,17 @@ function wireAdminTab() {
     const status = document.getElementById('adminInfoStatus');
     status.textContent = 'Saved.';
     status.className = 'status-line success';
+  });
+  document.getElementById('adminAddAddressBtn').addEventListener('click', async () => {
+    const label = document.getElementById('adminNewAddressLabel').value.trim();
+    const address = document.getElementById('adminNewAddressText').value.trim();
+    const statusEl = document.getElementById('adminAddressStatus');
+    const entry = await addStartAddress(label, address, statusEl);
+    if (entry) {
+      document.getElementById('adminNewAddressLabel').value = '';
+      document.getElementById('adminNewAddressText').value = '';
+      renderAdminAddressList();
+    }
   });
 }
 
@@ -2037,6 +2130,11 @@ function wireScheduleUI() {
   document.getElementById('startAddressSelect').addEventListener('change', updateAddressFormVisibility);
   document.getElementById('groupSelect').addEventListener('change', updateGroup2Availability);
   document.getElementById('saveNewAddressBtn').addEventListener('click', handleSaveNewAddress);
+  document.getElementById('showAddAddressBtn').addEventListener('click', () => {
+    document.getElementById('startAddressSelect').value = '';
+    document.getElementById('newAddressForm').style.display = 'flex';
+    document.getElementById('newAddressText').focus();
+  });
   document.getElementById('cancelNewAddressBtn').addEventListener('click', () => {
     document.getElementById('newAddressLabel').value = '';
     document.getElementById('newAddressText').value = '';
@@ -2711,13 +2809,46 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('downloadCsvBtn').addEventListener('click', downloadAllPatientsCsv);
+  document.getElementById('downloadTemplateBtn').addEventListener('click', () => {
+    const blob = new Blob(['Name,Address,DOB,Coordinator,Provider,Last Visit\n'], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pulse-patient-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
   document.getElementById('addCsvBtn').addEventListener('click', () => addFileInput.click());
 
   document.getElementById('clearAllBtn').addEventListener('click', showClearAllStep1);
 
   document.getElementById('addManualRowBtn').addEventListener('click', addManualRow);
-  document.getElementById('clientsSearchInput').addEventListener('input', renderTable);
+
+  const clientsSearchEl = document.getElementById('clientsSearchInput');
+  clientsSearchEl.value = ''; // force-clear on load — browsers sometimes restore typed values on refresh
+  const searchClearX = document.getElementById('clientsSearchClearX');
+  const updateSearchClearX = () => { searchClearX.style.display = clientsSearchEl.value ? 'block' : 'none'; };
+  clientsSearchEl.addEventListener('input', () => { renderTable(); updateSearchClearX(); });
+  searchClearX.addEventListener('click', () => {
+    clientsSearchEl.value = '';
+    updateSearchClearX();
+    renderTable();
+  });
+  updateSearchClearX();
+
+  document.getElementById('clientsFilterCount').addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'clearClientsFiltersBtn') {
+      document.getElementById('clientsSearchInput').value = '';
+      updateSearchClearX();
+      const providerSel = document.getElementById('providerFilter');
+      if (providerSel) providerSel.value = '';
+      activeProviderFilter = '';
+      localStorage.setItem(PROVIDER_FILTER_KEY, '');
+      renderTable();
+      renderGroupSummary();
+    }
+  });
   document.getElementById('scheduleSearchInput').addEventListener('input', (e) => renderScheduleSearchResults(e.target.value.trim()));
   document.getElementById('submitManualAddBtn').addEventListener('click', submitManualAdd);
   addManualRow(); // start with one blank row
