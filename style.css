@@ -223,6 +223,27 @@
   --shadow-lift: 0 10px 30px rgba(254, 128, 25, 0.2);
 }
 
+[data-theme="dungeon"] {
+  --bg: #0D0806;
+  --surface: #1C1310;
+  --surface-alt: #2A1C16;
+  --border: #4A2F22;
+
+  --peach: #E8590C;
+  --peach-deep: #B8430A;
+  --pink: #B91C1C;
+  --pink-deep: #8B1515;
+  --lime: #D4A017;
+  --lime-deep: #A67C13;
+
+  --text: #E8D9C0;
+  --text-soft: #A08B6E;
+  --text-on-accent: #1A0F0A;
+
+  --shadow: 0 4px 22px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 10px 34px rgba(232, 89, 12, 0.3);
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -1013,7 +1034,9 @@ input[type="range"] {
 [data-theme="solarized"] input[type="date"]::-webkit-calendar-picker-indicator,
 [data-theme="solarized"] input[type="time"]::-webkit-calendar-picker-indicator,
 [data-theme="gruvbox"] input[type="date"]::-webkit-calendar-picker-indicator,
-[data-theme="gruvbox"] input[type="time"]::-webkit-calendar-picker-indicator {
+[data-theme="gruvbox"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="dungeon"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="dungeon"] input[type="time"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
@@ -1028,6 +1051,11 @@ input[type="range"] {
   color: var(--text-on-accent);
   border-color: transparent;
 }
+[data-theme="dungeon"] .btn-tiny {
+  background: var(--peach);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
 [data-theme="dark"] .btn-tiny:hover,
 [data-theme="military"] .btn-tiny:hover,
 [data-theme="bitcoin"] .btn-tiny:hover,
@@ -1035,6 +1063,7 @@ input[type="range"] {
 [data-theme="nord"] .btn-tiny:hover,
 [data-theme="solarized"] .btn-tiny:hover,
 [data-theme="gruvbox"] .btn-tiny:hover { background: var(--pink); }
+[data-theme="dungeon"] .btn-tiny:hover { background: var(--pink); }
 [data-theme="dark"] .btn-tiny.btn-tiny-danger,
 [data-theme="military"] .btn-tiny.btn-tiny-danger,
 [data-theme="bitcoin"] .btn-tiny.btn-tiny-danger,
@@ -1042,6 +1071,7 @@ input[type="range"] {
 [data-theme="nord"] .btn-tiny.btn-tiny-danger,
 [data-theme="solarized"] .btn-tiny.btn-tiny-danger,
 [data-theme="gruvbox"] .btn-tiny.btn-tiny-danger { background: var(--pink); }
+[data-theme="dungeon"] .btn-tiny.btn-tiny-danger { background: var(--pink); }
 [data-theme="dark"] .btn-tiny.btn-tiny-danger:hover,
 [data-theme="military"] .btn-tiny.btn-tiny-danger:hover,
 [data-theme="bitcoin"] .btn-tiny.btn-tiny-danger:hover,
@@ -1049,6 +1079,7 @@ input[type="range"] {
 [data-theme="nord"] .btn-tiny.btn-tiny-danger:hover,
 [data-theme="solarized"] .btn-tiny.btn-tiny-danger:hover,
 [data-theme="gruvbox"] .btn-tiny.btn-tiny-danger:hover { background: var(--pink-deep); }
+[data-theme="dungeon"] .btn-tiny.btn-tiny-danger:hover { background: var(--pink-deep); }
 
 /* ============================================
    DAILY / WEEKLY MODE TOGGLE
