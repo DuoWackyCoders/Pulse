@@ -2553,11 +2553,6 @@ function showCalendarDay(dateStr) {
 
 let pendingArrivalEdit = null; // { context: 'live' | 'calendar', patientId, dateStr }
 
-function minutesToTimeInputValue(totalMinutes) {
-  const h = Math.floor(totalMinutes / 60) % 24;
-  const m = Math.round(totalMinutes % 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
 function timeInputValueToMinutes(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;
@@ -2857,118 +2852,152 @@ function switchTab(tabName) {
    INIT
    ============================================ */
 document.addEventListener('DOMContentLoaded', () => {
-  applyTheme(loadTheme());
-  document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+  const safeInit = (label, fn) => {
+    try { fn(); } catch (e) { console.error(`PULSE init step failed: ${label}`, e); }
+  };
 
-  document.querySelectorAll('.nav-tab').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.getAttribute('data-tab')));
+  safeInit('theme', () => {
+    applyTheme(loadTheme());
+    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
   });
 
-  wireScheduleUI();
-  wireWeeklyUI();
-  wireAdminTab();
-  wireCalendarUI();
-  wireEditModal();
-  renderCalendar();
+  safeInit('nav tabs', () => {
+    document.querySelectorAll('.nav-tab').forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.getAttribute('data-tab')));
+    });
+  });
 
-  const groupSizeSlider = document.getElementById('groupSizeSlider');
-  const groupSizeValue = document.getElementById('groupSizeValue');
-  groupSizeSlider.value = groupSizeMax;
-  groupSizeValue.textContent = groupSizeMax;
-  groupSizeSlider.addEventListener('input', () => {
-    groupSizeMax = parseInt(groupSizeSlider.value, 10);
+  safeInit('wireScheduleUI', wireScheduleUI);
+  safeInit('wireWeeklyUI', wireWeeklyUI);
+  safeInit('wireAdminTab', wireAdminTab);
+  safeInit('wireCalendarUI', wireCalendarUI);
+  safeInit('wireEditModal', wireEditModal);
+  safeInit('renderCalendar', renderCalendar);
+
+  safeInit('group size slider', () => {
+    const groupSizeSlider = document.getElementById('groupSizeSlider');
+    const groupSizeValue = document.getElementById('groupSizeValue');
+    groupSizeSlider.value = groupSizeMax;
     groupSizeValue.textContent = groupSizeMax;
-  });
-  groupSizeSlider.addEventListener('change', () => {
-    saveGroupSizeMax();
-    regroup();
-  });
-
-  document.getElementById('resetAutoGroupBtn').addEventListener('click', () => {
-    if (!confirm('This clears every manual group assignment (including anything drawn on the map) and re-clusters everyone automatically. Continue?')) return;
-    patients.forEach(p => { p.manualGroup = false; });
-    savePatients();
-    regroup();
+    groupSizeSlider.addEventListener('input', () => {
+      groupSizeMax = parseInt(groupSizeSlider.value, 10);
+      groupSizeValue.textContent = groupSizeMax;
+    });
+    groupSizeSlider.addEventListener('change', () => {
+      saveGroupSizeMax();
+      regroup();
+    });
   });
 
-  wireClientsMap();
-
-  const dropzone = document.getElementById('dropzone');
-  const fileInput = document.getElementById('fileInput');
-  const addFileInput = document.getElementById('addFileInput');
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
-  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file, 'replace');
-  });
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) handleFile(e.target.files[0], 'replace');
-  });
-  addFileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) handleFile(e.target.files[0], 'append');
+  safeInit('reset auto group button', () => {
+    document.getElementById('resetAutoGroupBtn').addEventListener('click', () => {
+      if (!confirm('This clears every manual group assignment (including anything drawn on the map) and re-clusters everyone automatically. Continue?')) return;
+      patients.forEach(p => { p.manualGroup = false; });
+      savePatients();
+      regroup();
+    });
   });
 
-  document.getElementById('downloadCsvBtn').addEventListener('click', downloadAllPatientsCsv);
-  document.getElementById('downloadTemplateBtn').addEventListener('click', () => {
-    const blob = new Blob(['Name,Address,DOB,Coordinator,Provider,Last Visit\n'], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'pulse-patient-template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+  safeInit('wireClientsMap', wireClientsMap);
+
+  safeInit('CSV dropzone', () => {
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const addFileInput = document.getElementById('addFileInput');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file, 'replace');
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) handleFile(e.target.files[0], 'replace');
+    });
+    addFileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) handleFile(e.target.files[0], 'append');
+    });
   });
 
-  document.getElementById('addCsvBtn').addEventListener('click', () => addFileInput.click());
-
-  document.getElementById('clearAllBtn').addEventListener('click', showClearAllStep1);
-
-  document.getElementById('addManualRowBtn').addEventListener('click', addManualRow);
-
-  const clientsSearchEl = document.getElementById('clientsSearchInput');
-  clientsSearchEl.value = ''; // force-clear on load — browsers sometimes restore typed values on refresh
-  const searchClearX = document.getElementById('clientsSearchClearX');
-  const updateSearchClearX = () => { searchClearX.style.display = clientsSearchEl.value ? 'block' : 'none'; };
-  clientsSearchEl.addEventListener('input', () => { renderTable(); updateSearchClearX(); });
-  searchClearX.addEventListener('click', () => {
-    clientsSearchEl.value = '';
-    updateSearchClearX();
-    renderTable();
+  safeInit('CSV download/template buttons', () => {
+    document.getElementById('downloadCsvBtn').addEventListener('click', downloadAllPatientsCsv);
+    document.getElementById('downloadTemplateBtn').addEventListener('click', () => {
+      const blob = new Blob(['Name,Address,DOB,Coordinator,Provider,Last Visit\n'], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pulse-patient-template.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    document.getElementById('addCsvBtn').addEventListener('click', () => document.getElementById('addFileInput').click());
   });
-  updateSearchClearX();
 
-  document.getElementById('clientsFilterCount').addEventListener('click', (e) => {
-    if (e.target && e.target.id === 'clearClientsFiltersBtn') {
-      document.getElementById('clientsSearchInput').value = '';
+  safeInit('clear all button', () => {
+    document.getElementById('clearAllBtn').addEventListener('click', showClearAllStep1);
+  });
+
+  safeInit('manual add row button', () => {
+    document.getElementById('addManualRowBtn').addEventListener('click', addManualRow);
+  });
+
+  safeInit('clients search box', () => {
+    const clientsSearchEl = document.getElementById('clientsSearchInput');
+    clientsSearchEl.value = ''; // force-clear on load — browsers sometimes restore typed values on refresh
+    const searchClearX = document.getElementById('clientsSearchClearX');
+    const updateSearchClearX = () => { searchClearX.style.display = clientsSearchEl.value ? 'block' : 'none'; };
+    clientsSearchEl.addEventListener('input', () => { renderTable(); updateSearchClearX(); });
+    searchClearX.addEventListener('click', () => {
+      clientsSearchEl.value = '';
       updateSearchClearX();
-      const providerSel = document.getElementById('providerFilter');
-      if (providerSel) providerSel.value = '';
-      activeProviderFilter = '';
-      localStorage.setItem(PROVIDER_FILTER_KEY, '');
+      renderTable();
+    });
+    updateSearchClearX();
+
+    document.getElementById('clientsFilterCount').addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'clearClientsFiltersBtn') {
+        document.getElementById('clientsSearchInput').value = '';
+        updateSearchClearX();
+        const providerSel = document.getElementById('providerFilter');
+        if (providerSel) providerSel.value = '';
+        activeProviderFilter = '';
+        localStorage.setItem(PROVIDER_FILTER_KEY, '');
+        renderTable();
+        renderGroupSummary();
+      }
+    });
+  });
+
+  safeInit('schedule search box', () => {
+    document.getElementById('scheduleSearchInput').addEventListener('input', (e) => renderScheduleSearchResults(e.target.value.trim()));
+  });
+
+  safeInit('manual add form', () => {
+    document.getElementById('submitManualAddBtn').addEventListener('click', submitManualAdd);
+    addManualRow(); // start with one blank row
+  });
+
+  safeInit('provider filter', () => {
+    document.getElementById('providerFilter').addEventListener('change', (e) => {
+      activeProviderFilter = e.target.value;
+      localStorage.setItem(PROVIDER_FILTER_KEY, activeProviderFilter);
       renderTable();
       renderGroupSummary();
-    }
+    });
   });
-  document.getElementById('scheduleSearchInput').addEventListener('input', (e) => renderScheduleSearchResults(e.target.value.trim()));
-  document.getElementById('submitManualAddBtn').addEventListener('click', submitManualAdd);
-  addManualRow(); // start with one blank row
 
-  document.getElementById('providerFilter').addEventListener('change', (e) => {
-    activeProviderFilter = e.target.value;
-    localStorage.setItem(PROVIDER_FILTER_KEY, activeProviderFilter);
+  safeInit('initial table render', () => {
     renderTable();
     renderGroupSummary();
+    populateProviderFilter();
   });
 
-  renderTable();
-  renderGroupSummary();
-  populateProviderFilter();
-  if (patients.some(p => p.lat === null || p.lng === null)) {
-    geocodeAllPending();
-  }
+  safeInit('initial geocoding check', () => {
+    if (patients.some(p => p.lat === null || p.lng === null)) {
+      geocodeAllPending();
+    }
+  });
 });
