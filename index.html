@@ -88,11 +88,11 @@
           <input type="date" id="scheduleDate">
         </label>
         <label class="field">Starting address (home base)
-          <div style="display:flex; gap:8px;">
-            <select id="startAddressSelect" style="flex:1;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="startAddressSelect" style="flex:1; min-width:0;">
               <option value="">+ Add new address...</option>
             </select>
-            <button id="showAddAddressBtn" class="btn btn-secondary" type="button" style="white-space:nowrap;">➕ Add</button>
+            <button id="showAddAddressBtn" type="button" title="Add a new starting address" style="flex-shrink:0; width:38px; height:38px; border-radius:50%; border:none; background: var(--peach); color: var(--text-on-accent); font-size:1.2rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1;">+</button>
           </div>
         </label>
         <div id="newAddressForm" class="field" style="display:none; grid-column: 1 / -1;">
@@ -279,6 +279,9 @@
         </label>
         <label class="field">Provider
           <input type="text" id="editProvider">
+        </label>
+        <label class="field">Last visit date (clears the "due" status — leave blank if never visited)
+          <input type="date" id="editLastVisit">
         </label>
       </div>
       <p id="editStatus" class="status-line"></p>
@@ -586,6 +589,15 @@
         <button id="adminAddAddressBtn" class="btn btn-primary" type="button">Add</button>
       </div>
       <p id="adminAddressStatus" class="status-line"></p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Fix a stuck "Last Visit" date</h2>
+      <p class="card-subtitle">
+        Use this if someone shows as recently-visited (red/pink) even after you've cleared their schedule. This most often happens after re-uploading a patient CSV as a full replacement — every patient gets a fresh internal ID with no link to the old one, so old schedule data can't be matched back up anymore. This button recalculates every patient's Last Visit directly from your calendar's actual schedule history, matched by name, bypassing that ID mismatch entirely.
+      </p>
+      <button id="recalcLastVisitBtn" class="btn btn-primary" type="button">🔄 Recalculate all Last Visit dates</button>
+      <p id="recalcLastVisitStatus" class="status-line"></p>
     </section>
 
   </div>
