@@ -48,7 +48,7 @@
 
     <button class="nav-tab" data-tab="admin" type="button">⚙️ Admin</button>
 
-    <button id="themeToggle" class="theme-toggle" type="button">🌙 Dark mode</button>
+    <button id="themeToggle" class="theme-toggle" type="button" title="Quick toggle for the default Peach & Pink look — for other themes, use Admin">🌙 Default: Dark</button>
   </aside>
 
   <main class="main-content">
@@ -76,6 +76,7 @@
     <div class="mode-toggle">
       <button id="dailyModeBtn" class="mode-btn active" type="button">📆 Daily</button>
       <button id="weeklyModeBtn" class="mode-btn" type="button">🗓️ Weekly</button>
+      <button id="monthlyModeBtn" class="mode-btn" type="button">📅 Monthly</button>
     </div>
 
     <div id="scheduleModeDaily">
@@ -123,8 +124,8 @@
         </label>
         <label class="field">Route direction
           <select id="routeDirection">
-            <option value="closest">Closest first (default)</option>
-            <option value="furthest">Furthest first (finish near home)</option>
+            <option value="closest">Closest first</option>
+            <option value="furthest" selected>Furthest first (default — beats traffic, finish near home)</option>
           </select>
         </label>
       </div>
@@ -225,6 +226,56 @@
       </section>
 
       <div id="weekResults"></div>
+    </div>
+
+    <div id="scheduleModeMonthly" style="display:none;">
+      <section class="card">
+        <h2 class="card-title">Build this month's routes</h2>
+        <p class="card-subtitle">Takes everyone due in the chosen group, orders them geographically (so nearby patients land on the same or adjacent days), and spreads them evenly across the month's working days.</p>
+
+        <div class="schedule-grid">
+          <label class="field">Month
+            <input type="month" id="monthPicker">
+          </label>
+          <label class="field">Starting address (home base)
+            <select id="monthStartAddressSelect"></select>
+          </label>
+          <label class="field">Group
+            <select id="monthGroupSelect"></select>
+          </label>
+          <label class="field">Stops per day
+            <input type="number" id="monthStopCount" min="1" value="8">
+          </label>
+          <label class="field">Start time
+            <input type="time" id="monthStartTime" value="08:00">
+          </label>
+          <label class="field">Visit duration (min, default)
+            <input type="number" id="monthVisitDuration" min="1" value="15">
+          </label>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
+          <input type="checkbox" id="monthIncludeRecent" style="width:16px; height:16px;">
+          Include patients visited in the last 30 days (manual override)
+        </label>
+
+        <div class="work-days-row">
+          <span class="work-days-label">Standard work days (shared with Weekly, saved automatically):</span>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="0"> Mon</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="1"> Tue</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="2"> Wed</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="3"> Thu</label>
+          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="4"> Fri</label>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
+          <button id="generateMonthBtn" class="btn btn-primary" type="button">Generate Month</button>
+          <button id="approveMonthBtn" class="btn btn-primary" type="button" style="display:none;">✅ Approve Whole Month</button>
+          <button id="cancelMonthBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
+        </div>
+        <p id="monthStatus" class="status-line"></p>
+      </section>
+
+      <div id="monthResults"></div>
     </div>
 
   </div>
@@ -330,6 +381,33 @@
         <button id="editArrivalResetBtn" class="btn btn-ghost" type="button" style="display:none;">↺ Reset to auto</button>
         <button id="editArrivalCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
         <button id="editArrivalSaveBtn" class="btn btn-primary" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dayReviewModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-box-wide">
+      <div class="modal-sticky-header">
+        <button id="dayReviewCloseX" class="modal-close-x" type="button" aria-label="Close">✕</button>
+        <div>
+          <h3 class="card-title" id="dayReviewTitle">—</h3>
+          <p class="card-subtitle">Click a blue pin to remove that stop, or a green pin to add it — nothing is saved until you hit Confirm.</p>
+        </div>
+      </div>
+      <div class="modal-scroll-body">
+        <div id="dayReviewSummary" class="route-summary"></div>
+        <div id="dayReviewMap" class="route-map"></div>
+        <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (unassigned or on another day this batch)</p>
+        <div style="margin: 14px 0;">
+          <input type="text" id="dayReviewSearchInput" placeholder="🔍 Search any patient to add to this day..." style="width:100%; font-family: var(--font-mono); font-size:0.9rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+          <div id="dayReviewSearchResults" style="display:none; margin-top:8px;"></div>
+        </div>
+        <h3>Scheduled (<span id="dayReviewCount">0</span>)</h3>
+        <div id="dayReviewList"></div>
+      </div>
+      <div class="modal-sticky-footer">
+        <button id="dayReviewCancelBtn" class="btn btn-secondary" type="button">✖ Cancel</button>
+        <button id="dayReviewConfirmBtn" class="btn btn-primary" type="button">✔ Confirm</button>
       </div>
     </div>
   </div>
