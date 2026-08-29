@@ -258,14 +258,8 @@
           Include patients visited in the last 30 days (manual override)
         </label>
 
-        <div class="work-days-row">
-          <span class="work-days-label">Standard work days (shared with Weekly, saved automatically):</span>
-          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="0"> Mon</label>
-          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="1"> Tue</label>
-          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="2"> Wed</label>
-          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="3"> Thu</label>
-          <label class="work-day-check"><input type="checkbox" class="workDayToggleMonth" data-day="4"> Fri</label>
-        </div>
+        <p class="card-subtitle" style="margin-top:14px;">Each week in the month gets its own work days — pick the month above, then set each week below. Starts pre-filled from your usual pattern, adjust any week that's different.</p>
+        <div id="monthWeekPatternRows"></div>
 
         <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
           <button id="generateMonthBtn" class="btn btn-primary" type="button">Generate Month</button>
