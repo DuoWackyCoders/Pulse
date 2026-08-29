@@ -200,6 +200,12 @@
           <label class="field">Visit duration (min, default)
             <input type="number" id="weekVisitDuration" min="1" value="15">
           </label>
+          <label class="field">Route direction
+            <select id="weekRouteDirection">
+              <option value="closest">Closest first</option>
+              <option value="furthest" selected>Furthest first (default — beats traffic, finish near home)</option>
+            </select>
+          </label>
         </div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
           <input type="checkbox" id="weekIncludeRecent" style="width:16px; height:16px;">
@@ -251,6 +257,12 @@
           </label>
           <label class="field">Visit duration (min, default)
             <input type="number" id="monthVisitDuration" min="1" value="15">
+          </label>
+          <label class="field">Route direction (per day)
+            <select id="monthRouteDirection">
+              <option value="closest">Closest first</option>
+              <option value="furthest" selected>Furthest first (default — beats traffic, finish near home)</option>
+            </select>
           </label>
         </div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
