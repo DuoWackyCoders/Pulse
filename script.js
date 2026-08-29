@@ -1600,7 +1600,7 @@ function renderWeekDayCards() {
 }
 
 function syncWorkDayCheckboxesUI() {
-  document.querySelectorAll('.workDayToggle, .workDayToggleMonth').forEach(cb => {
+  document.querySelectorAll('.workDayToggle').forEach(cb => {
     const idx = parseInt(cb.getAttribute('data-day'), 10);
     cb.checked = standardWorkDays[idx];
   });
@@ -1929,12 +1929,12 @@ function switchScheduleMode(mode) {
   if (mode === 'monthly') {
     populateMonthStartAddressSelect();
     document.getElementById('monthGroupSelect').innerHTML = groupSelectOptionsHtml();
-    syncWorkDayCheckboxesUI();
     const monthInput = document.getElementById('monthPicker');
     if (!monthInput.value) {
       const today = new Date();
       monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     }
+    renderMonthWeekPatternRows();
   }
 }
 
@@ -1977,16 +1977,71 @@ function populateMonthStartAddressSelect() {
     : '<option value="">No saved address — add one on the Daily tab first</option>';
 }
 
-function getWorkingDaysInMonth(yearMonthStr) {
+let monthWeekPatterns = {}; // { weekIdx: [monBool, tueBool, wedBool, thuBool, friBool] } — only for the currently-selected month, rebuilt whenever the month changes
+
+// Groups the month's weekdays by which ISO week (Mon-anchored) they fall
+// into. A month's first/last week is often partial (e.g. starts on a
+// Wednesday) — only the days that actually fall within the target month
+// are included for that week.
+function getWeeksInMonth(yearMonthStr) {
   const [y, m] = yearMonthStr.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
-  const days = [];
+  const weeksMap = new Map(); // mondayKey -> { monday, days: [{date, dow}] }
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(y, m - 1, d).getDay(); // 0=Sun..6=Sat
     if (dow === 0 || dow === 6) continue;
-    if (!standardWorkDays[dow - 1]) continue; // Mon=index 0..Fri=index 4
-    days.push(dateKey(y, m - 1, d));
+    const dateStr = dateKey(y, m - 1, d);
+    const monday = mondayOf(dateStr);
+    const mondayKey = dateKey(monday.getFullYear(), monday.getMonth(), monday.getDate());
+    if (!weeksMap.has(mondayKey)) weeksMap.set(mondayKey, { monday: mondayKey, days: [] });
+    weeksMap.get(mondayKey).days.push({ date: dateStr, dow });
   }
+  return Array.from(weeksMap.values()).sort((a, b) => a.monday.localeCompare(b.monday));
+}
+
+function renderMonthWeekPatternRows() {
+  const monthVal = document.getElementById('monthPicker').value;
+  const container = document.getElementById('monthWeekPatternRows');
+  if (!monthVal || !container) return;
+
+  const weeks = getWeeksInMonth(monthVal);
+  monthWeekPatterns = {};
+  weeks.forEach((week, idx) => { monthWeekPatterns[idx] = [...standardWorkDays]; }); // pre-fill from the usual pattern, adjustable per week below
+
+  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  container.innerHTML = weeks.map((week, idx) => {
+    const firstDate = week.days[0].date;
+    const lastDate = week.days[week.days.length - 1].date;
+    const checks = dayLabels.map((label, dayIdx) => `
+      <label class="work-day-check"><input type="checkbox" class="monthWeekDayToggle" data-week="${idx}" data-day="${dayIdx}" ${monthWeekPatterns[idx][dayIdx] ? 'checked' : ''}> ${label}</label>
+    `).join('');
+    return `
+      <div class="work-days-row">
+        <span class="work-days-label">Week ${idx + 1} (${firstDate} – ${lastDate}):</span>
+        ${checks}
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.monthWeekDayToggle').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const weekIdx = parseInt(e.target.getAttribute('data-week'), 10);
+      const dayIdx = parseInt(e.target.getAttribute('data-day'), 10);
+      monthWeekPatterns[weekIdx][dayIdx] = e.target.checked;
+    });
+  });
+}
+
+function getWorkingDaysInMonth(yearMonthStr) {
+  const weeks = getWeeksInMonth(yearMonthStr);
+  const days = [];
+  weeks.forEach((week, idx) => {
+    const pattern = monthWeekPatterns[idx] || standardWorkDays;
+    week.days.forEach(({ date, dow }) => {
+      const workDayIdx = dow - 1; // Mon=0..Fri=4
+      if (pattern[workDayIdx]) days.push(date);
+    });
+  });
   return days;
 }
 
@@ -2469,14 +2524,7 @@ function wireMonthlyUI() {
   document.getElementById('generateMonthBtn').addEventListener('click', generateMonth);
   document.getElementById('approveMonthBtn').addEventListener('click', approveMonth);
   document.getElementById('cancelMonthBtn').addEventListener('click', cancelMonth);
-
-  document.querySelectorAll('.workDayToggleMonth').forEach(cb => {
-    cb.addEventListener('change', (e) => {
-      const idx = parseInt(e.target.getAttribute('data-day'), 10);
-      standardWorkDays[idx] = e.target.checked;
-      saveStandardWorkDays(standardWorkDays);
-    });
-  });
+  document.getElementById('monthPicker').addEventListener('change', renderMonthWeekPatternRows);
 }
 
 async function generateRoute() {
