@@ -1946,13 +1946,19 @@ async function computeTimingForDay(
   });
 
   let returnTripMinutes = 0;
+  let returnTripMiles = 0;
   if (legs && legs[legs.length - 1]) {
     returnTripMinutes = legs[legs.length - 1].minutes;
+    returnTripMiles = legs[legs.length - 1].miles;
   } else {
     const last = orderedPatients[orderedPatients.length - 1];
-    returnTripMinutes = milesToMinutes(
-      haversineMiles(last.lat, last.lng, startCoords.lat, startCoords.lng),
+    returnTripMiles = haversineMiles(
+      last.lat,
+      last.lng,
+      startCoords.lat,
+      startCoords.lng,
     );
+    returnTripMinutes = milesToMinutes(returnTripMiles);
   }
   const returnHomeMinutes = cursorMinutes + returnTripMinutes;
   const totalHours = (returnHomeMinutes - dayStartMinutes) / 60;
@@ -1963,6 +1969,8 @@ async function computeTimingForDay(
     usingRealRoads,
     dayStartMinutes,
     returnHomeMinutes,
+    returnTripMinutes,
+    returnTripMiles,
   };
 }
 
@@ -2177,6 +2185,7 @@ async function generateWeek() {
         dayLabel: WEEK_DAY_LABELS[i],
         group,
         stopCount,
+        routeDirection,
         stops: timing.stops,
         totalHours: timing.totalHours,
         usingRealRoads: timing.usingRealRoads,
@@ -2748,6 +2757,7 @@ async function generateMonth() {
         stops: timing.stops,
         totalHours: timing.totalHours,
         usingRealRoads: timing.usingRealRoads,
+        routeDirection,
       });
     }
     for (let i = daysToUse; i < workingDays.length; i++) {
@@ -2989,6 +2999,7 @@ window.openDayReviewModal = function (batchType, dayIdx) {
     startCoords,
     startTime,
     visitDuration,
+    routeDirection: day.routeDirection || "closest",
   };
 
   document.getElementById("dayReviewTitle").textContent =
@@ -3024,6 +3035,10 @@ async function recalcDayReview() {
   dayReviewContext.computedStops = timing.stops;
   dayReviewContext.totalHours = timing.totalHours;
   dayReviewContext.usingRealRoads = timing.usingRealRoads;
+  dayReviewContext.dayStartMinutes = timing.dayStartMinutes;
+  dayReviewContext.returnHomeMinutes = timing.returnHomeMinutes;
+  dayReviewContext.returnTripMinutes = timing.returnTripMinutes;
+  dayReviewContext.returnTripMiles = timing.returnTripMiles;
 
   // Re-sync scheduled with computed timing data (arrivalMinutes etc. live on computedStops)
   dayReviewContext.scheduled = timing.stops;
@@ -3035,16 +3050,26 @@ async function recalcDayReview() {
 
 function renderDayReviewSummary() {
   const el = document.getElementById("dayReviewSummary");
-  const { computedStops, totalHours, usingRealRoads } = dayReviewContext;
+  const {
+    computedStops,
+    totalHours,
+    usingRealRoads,
+    dayStartMinutes,
+    returnHomeMinutes,
+    returnTripMinutes,
+    returnTripMiles,
+  } = dayReviewContext;
   if (!computedStops || computedStops.length === 0) {
     el.innerHTML = '<span class="rs-item">No stops on this day.</span>';
     return;
   }
-  const totalMiles = computedStops.reduce(
-    (sum, s) => sum + (s.travelMiles || 0),
-    0,
-  );
+  const totalMiles =
+    computedStops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) +
+    (returnTripMiles || 0);
   el.innerHTML = `
+    <span class="rs-item"><span class="rs-label">Start:</span> Home ${minutesToClock(dayStartMinutes)}</span>
+    <span class="rs-item"><span class="rs-label">Return trip:</span> 🚗 ${Math.round(returnTripMinutes)} min / ${returnTripMiles.toFixed(1)} mi</span>
+    <span class="rs-item"><span class="rs-label">Arrive home:</span> ${minutesToClock(returnHomeMinutes)}</span>
     <span class="rs-item"><span class="rs-label">Stops:</span> ${computedStops.length}</span>
     <span class="rs-item"><span class="rs-label">Total hrs:</span> ${totalHours.toFixed(1)}</span>
     <span class="rs-item"><span class="rs-label">Total miles:</span> ${totalMiles.toFixed(1)} mi</span>
@@ -3052,23 +3077,69 @@ function renderDayReviewSummary() {
   `;
 }
 
+let dayReviewDraggedId = null;
+
 function renderDayReviewList() {
   const el = document.getElementById("dayReviewList");
   document.getElementById("dayReviewCount").textContent =
     dayReviewContext.computedStops.length;
-  el.innerHTML = dayReviewContext.computedStops
-    .map(
-      (s, i) => `
-    <div class="cal-detail-item">
+  el.innerHTML =
+    `<ul class="drag-list" id="dayReviewDragList">` +
+    dayReviewContext.computedStops
+      .map(
+        (s, i) => `
+    <li class="drag-item" draggable="true" data-id="${s.id}">
       <div class="di-name">#${i + 1} ${escapeHtml(s.name)}${s.group ? ` <span style="color:var(--text-soft); font-weight:600; font-size:0.8em;">(Grp- ${escapeHtml(s.group)})</span>` : ""}</div>
       <div class="di-meta">${minutesToClock(s.arrivalMinutes)} — ${escapeHtml(s.address || "")}</div>
       <div class="item-actions">
         <button type="button" class="btn-tiny btn-tiny-danger" onclick="window.removeFromDayReview('${s.id}')">✖ Remove</button>
       </div>
-    </div>
+    </li>
   `,
-    )
-    .join("");
+      )
+      .join("") +
+    `</ul>`;
+  attachDayReviewDragHandlers();
+}
+
+function attachDayReviewDragHandlers() {
+  const list = document.getElementById("dayReviewDragList");
+  if (!list) return;
+
+  list.querySelectorAll(".drag-item").forEach((item) => {
+    item.addEventListener("dragstart", () => {
+      dayReviewDraggedId = item.getAttribute("data-id");
+      item.classList.add("dragging");
+    });
+    item.addEventListener("dragend", () => item.classList.remove("dragging"));
+  });
+
+  list.addEventListener("dragover", (e) => e.preventDefault());
+  list.addEventListener("drop", (e) => {
+    e.preventDefault();
+    if (!dayReviewDraggedId) return;
+    const idx = dayReviewContext.scheduled.findIndex(
+      (p) => p.id === dayReviewDraggedId,
+    );
+    if (idx === -1) return;
+    const [moved] = dayReviewContext.scheduled.splice(idx, 1);
+
+    const items = Array.from(list.querySelectorAll(".drag-item"));
+    let insertAt = dayReviewContext.scheduled.length;
+    const dropY = e.clientY;
+    for (let i = 0; i < items.length; i++) {
+      const rect = items[i].getBoundingClientRect();
+      if (dropY < rect.top + rect.height / 2) {
+        insertAt = i;
+        break;
+      }
+    }
+    dayReviewContext.scheduled.splice(insertAt, 0, moved);
+    dayReviewDraggedId = null;
+    // Manual order is intentional — recalcDayReview only recomputes real-road
+    // times for whatever order is already in the array, it never re-optimizes.
+    recalcDayReview();
+  });
 }
 
 function renderDayReviewMap() {
@@ -3200,6 +3271,11 @@ window.addToDayReview = async function (patientId) {
     dayReviewContext.startCoords.lng,
     dayReviewContext.scheduled,
   );
+  // nearestNeighborOrder is always closest-first — re-apply this day's own
+  // direction preference so an edit doesn't silently discard it.
+  if (dayReviewContext.routeDirection === "furthest") {
+    dayReviewContext.scheduled = dayReviewContext.scheduled.slice().reverse();
+  }
 
   document.getElementById("dayReviewSearchInput").value = "";
   document.getElementById("dayReviewSearchResults").style.display = "none";
@@ -3324,6 +3400,34 @@ function wireMonthlyUI() {
   document
     .getElementById("monthPicker")
     .addEventListener("change", renderMonthWeekPatternRows);
+  document
+    .getElementById("exportApprovedMonthBtn")
+    .addEventListener("click", () => {
+      const monthVal = document.getElementById("monthPicker").value;
+      if (!monthVal) {
+        setMonthStatus("Pick a month first.", "error");
+        return;
+      }
+      const [y, m] = monthVal.split("-").map(Number);
+      const schedules = loadSchedules();
+      const entries = [];
+      Object.keys(schedules).forEach((dateStr) => {
+        const d = new Date(dateStr + "T00:00:00");
+        if (d.getFullYear() === y && d.getMonth() === m - 1) {
+          schedules[dateStr].forEach((p) =>
+            entries.push({ ...p, date: dateStr }),
+          );
+        }
+      });
+      if (entries.length === 0) {
+        setMonthStatus(
+          `No approved schedule found for ${monthVal} — generate and approve first.`,
+          "error",
+        );
+        return;
+      }
+      downloadScheduleCsv(entries, `schedule-${monthVal}.csv`);
+    });
 }
 
 async function generateRoute() {
@@ -4340,6 +4444,44 @@ window.cancelWeekSchedule = function (dateStr) {
   document.getElementById("dayDetailModal").style.display = "none";
 };
 
+window.cancelMonthSchedule = function (dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const y = d.getFullYear();
+  const m = d.getMonth();
+
+  const schedules = loadSchedules();
+  const datesInMonth = Object.keys(schedules).filter((ds) => {
+    const dd = new Date(ds + "T00:00:00");
+    return dd.getFullYear() === y && dd.getMonth() === m;
+  });
+  const totalPatients = datesInMonth.reduce(
+    (sum, ds) => sum + schedules[ds].length,
+    0,
+  );
+  if (totalPatients === 0) {
+    alert("Nothing scheduled that month.");
+    return;
+  }
+  if (
+    !confirm(
+      `Cancel the ENTIRE month's schedule (${datesInMonth.length} day(s), ${totalPatients} patient visit(s) total)? This cannot be undone.`,
+    )
+  )
+    return;
+
+  const affectedIds = new Set();
+  datesInMonth.forEach((ds) => {
+    schedules[ds].forEach((entry) => affectedIds.add(entry.id));
+    delete schedules[ds];
+  });
+  saveSchedules(schedules);
+  affectedIds.forEach((id) => recomputeLastVisitDate(id));
+  savePatients();
+  renderTable();
+  renderCalendar();
+  document.getElementById("dayDetailModal").style.display = "none";
+};
+
 window.openCalendarDayInGoogleMaps = function (dateStr) {
   const schedules = loadSchedules();
   const list = schedules[dateStr] || [];
@@ -4761,6 +4903,13 @@ function wireCalendarUI() {
       const modal = document.getElementById("dayDetailModal");
       const dateStr = modal.getAttribute("data-current-date");
       if (dateStr) cancelWeekSchedule(dateStr);
+    });
+  document
+    .getElementById("cancelMonthScheduleBtn")
+    .addEventListener("click", () => {
+      const modal = document.getElementById("dayDetailModal");
+      const dateStr = modal.getAttribute("data-current-date");
+      if (dateStr) cancelMonthSchedule(dateStr);
     });
 }
 
