@@ -116,6 +116,9 @@
         <label class="field">Start time
           <input type="time" id="startTime" value="08:00">
         </label>
+        <label class="field">Return time (optional — be home by)
+          <input type="time" id="returnTime">
+        </label>
         <label class="field">Visit duration (min, default)
           <input type="number" id="visitDuration" min="1" value="15">
         </label>
@@ -197,6 +200,9 @@
           <label class="field">Start time
             <input type="time" id="weekStartTime" value="08:00">
           </label>
+          <label class="field">Return time (optional — be home by)
+            <input type="time" id="weekReturnTime">
+          </label>
           <label class="field">Visit duration (min, default)
             <input type="number" id="weekVisitDuration" min="1" value="15">
           </label>
@@ -226,6 +232,8 @@
         <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
           <button id="generateWeekBtn" class="btn btn-primary" type="button">Generate Week</button>
           <button id="approveWeekBtn" class="btn btn-primary" type="button" style="display:none;">✅ Approve Whole Week</button>
+          <button id="undoWeekBtn" class="btn btn-secondary" type="button" disabled>↩️ Undo</button>
+          <button id="undoAllWeekBtn" class="btn btn-secondary" type="button" disabled>⏮️ Undo All (back to generation)</button>
           <button id="cancelWeekBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
         </div>
         <p id="weekStatus" class="status-line"></p>
@@ -254,6 +262,9 @@
           </label>
           <label class="field">Start time
             <input type="time" id="monthStartTime" value="08:00">
+          </label>
+          <label class="field">Return time (optional — be home by)
+            <input type="time" id="monthReturnTime">
           </label>
           <label class="field">Visit duration (min, default)
             <input type="number" id="monthVisitDuration" min="1" value="15">
@@ -344,6 +355,11 @@
         <label class="field">Last visit date (clears the "due" status — leave blank if never visited)
           <input type="date" id="editLastVisit">
         </label>
+      </div>
+      <div id="editManualPlaceWrap" style="display:none; margin-top:14px;">
+        <p class="card-subtitle" style="margin-bottom:6px;">⚠️ This address couldn't be automatically located. Click the map below where the house actually is — this sets the location directly, no geocoding needed.</p>
+        <div id="editManualMap" style="height:260px; border-radius: var(--radius-sm); overflow:hidden;"></div>
+        <p id="editManualCoordsLabel" class="status-line" style="margin-top:6px;"></p>
       </div>
       <p id="editStatus" class="status-line"></p>
       <div class="modal-actions">
