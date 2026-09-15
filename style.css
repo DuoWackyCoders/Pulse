@@ -480,6 +480,18 @@ input[type="file"] { display: none; }
   box-shadow: none !important;
 }
 
+.idle-gap-row {
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--peach-deep);
+  padding: 6px 0;
+  margin: 2px 0;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  list-style: none;
+}
+
 .month-avail-cell {
   transition: transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease;
 }
