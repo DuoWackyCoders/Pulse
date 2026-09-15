@@ -277,6 +277,8 @@
           <button id="generateMonthBtn" class="btn btn-primary" type="button">Generate Month</button>
           <button id="approveMonthBtn" class="btn btn-primary" type="button" style="display:none;">✅ Approve Whole Month</button>
           <button id="exportApprovedMonthBtn" class="btn btn-secondary" type="button">⬇️ Export This Month's Approved CSV</button>
+          <button id="undoMonthBtn" class="btn btn-secondary" type="button" disabled>↩️ Undo</button>
+          <button id="undoAllMonthBtn" class="btn btn-secondary" type="button" disabled>⏮️ Undo All (back to generation)</button>
           <button id="cancelMonthBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
         </div>
         <p id="monthStatus" class="status-line"></p>
@@ -405,7 +407,7 @@
       <div class="modal-scroll-body">
         <div id="dayReviewSummary" class="route-summary"></div>
         <div id="dayReviewMap" class="route-map"></div>
-        <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (unassigned or on another day this batch)</p>
+        <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (already scheduled another day this batch) • 🟠 Available (still unassigned this month)</p>
         <div style="margin: 14px 0;">
           <input type="text" id="dayReviewSearchInput" placeholder="🔍 Search any patient to add to this day..." style="width:100%; font-family: var(--font-mono); font-size:0.9rem; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
           <div id="dayReviewSearchResults" style="display:none; margin-top:8px;"></div>
