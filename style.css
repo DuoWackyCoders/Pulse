@@ -473,6 +473,31 @@ input[type="file"] { display: none; }
 }
 .btn:active { transform: scale(0.97); }
 .btn:focus-visible { outline: 2px solid var(--pink-deep); outline-offset: 2px; }
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.month-avail-cell {
+  transition: transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease;
+}
+.month-avail-cell:hover {
+  filter: brightness(1.4);
+  transform: scale(1.12);
+  box-shadow: 0 0 0 2px currentColor;
+  z-index: 1;
+  position: relative;
+}
+.month-avail-cell:active {
+  transform: scale(0.9);
+}
+.month-avail-cell.month-avail-selected {
+  outline: 3px solid var(--text);
+  outline-offset: 1px;
+  font-weight: 900;
+}
 
 .btn-primary {
   background: linear-gradient(135deg, var(--pink) 0%, var(--pink-deep) 100%);
@@ -860,6 +885,14 @@ input[type="range"] {
   border: 2px solid var(--pink-deep);
   box-shadow: 0 0 4px rgba(238, 126, 171, 0.6);
 }
+.ghost-pin-dot.ghost-pin-leftover {
+  width: 17px;
+  height: 17px;
+  background: #F7931A;
+  opacity: 0.9;
+  border: 2px solid #D97D0A;
+  box-shadow: 0 0 6px rgba(247, 147, 26, 0.7);
+}
 .leaflet-div-icon.ghost-pin {
   background: transparent;
   border: none;
@@ -878,6 +911,38 @@ input[type="range"] {
   box-shadow: var(--shadow-lift);
 }
 .leaflet-div-icon.home-pin {
+  background: transparent;
+  border: none;
+}
+
+.cluster-pin-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 13px;
+  color: #fff;
+  box-shadow: var(--shadow-lift);
+  position: relative;
+}
+.cluster-pin-badge.cluster-pin-mixed {
+  border: 3px solid #000;
+  box-shadow: 0 0 0 2px #fff, var(--shadow-lift);
+}
+.cluster-pin-warn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 13px;
+  line-height: 1;
+  filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff);
+}
+.leaflet-div-icon.cluster-pin {
   background: transparent;
   border: none;
 }
