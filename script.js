@@ -1673,6 +1673,35 @@ async function computeTimingForDay(startCoords, orderedPatients, startTimeStr, d
   return { stops, totalHours, usingRealRoads, dayStartMinutes, returnHomeMinutes, returnTripMinutes, returnTripMiles };
 }
 
+/**
+ * Wraps computeTimingForDay with an optional "be home by X" cap. If the
+ * full list already fits, this is a no-op pass-through. If not, it drops
+ * whole address units from the end (never splitting a same-address cluster)
+ * until the day fits — and if even the smallest unavoidable unit alone
+ * exceeds the target, keeps it whole anyway and flags the exception rather
+ * than either splitting a household or silently excluding it.
+ */
+async function trimStopsToReturnTime(startCoords, orderedPatients, startTimeStr, defaultVisitDuration, returnTimeMinutes) {
+  let timing = await computeTimingForDay(startCoords, orderedPatients, startTimeStr, defaultVisitDuration);
+  if (!returnTimeMinutes || orderedPatients.length === 0 || timing.returnHomeMinutes <= returnTimeMinutes) {
+    return { ...timing, trimmedCount: 0, returnTimeException: false };
+  }
+
+  const units = buildLocationUnits(orderedPatients);
+  let keepUnits = [...units];
+  let exception = false;
+  while (keepUnits.length > 0) {
+    const flatStops = keepUnits.flat();
+    const check = await computeTimingForDay(startCoords, flatStops, startTimeStr, defaultVisitDuration);
+    if (check.returnHomeMinutes <= returnTimeMinutes) { timing = check; break; }
+    if (keepUnits.length === 1) { timing = check; exception = true; break; }
+    keepUnits = keepUnits.slice(0, -1);
+  }
+
+  const trimmedCount = orderedPatients.length - timing.stops.length;
+  return { ...timing, trimmedCount, returnTimeException: exception };
+}
+
 /* ============================================
    WEEKLY SCHEDULING MODE
    ============================================ */
@@ -1692,6 +1721,48 @@ function saveStandardWorkDays(arr) {
 let standardWorkDays = loadStandardWorkDays();
 let weekResults = []; // populated after Generate Week — array of {date, dayLabel, group, stopCount, stops, error, totalHours, usingRealRoads}
 let weekStartCoordsGlobal = null;
+
+/* ============================================
+   WEEKLY UNDO (mirrors the Monthly undo system exactly)
+   ============================================ */
+let weekUndoStack = [];
+let weekGenerationSnapshot = null;
+const WEEK_UNDO_MAX = 100;
+
+function snapshotWeekState() {
+  return { weekResults: structuredClone(weekResults) };
+}
+
+function pushWeekUndoSnapshot() {
+  weekUndoStack.push(snapshotWeekState());
+  if (weekUndoStack.length > WEEK_UNDO_MAX) weekUndoStack.shift();
+  updateWeekUndoButtons();
+}
+
+function updateWeekUndoButtons() {
+  const undoBtn = document.getElementById('undoWeekBtn');
+  const undoAllBtn = document.getElementById('undoAllWeekBtn');
+  if (undoBtn) undoBtn.disabled = weekUndoStack.length === 0;
+  if (undoAllBtn) undoAllBtn.disabled = !weekGenerationSnapshot || weekUndoStack.length === 0;
+}
+
+window.undoWeekChange = function () {
+  if (weekUndoStack.length === 0) return;
+  const snapshot = weekUndoStack.pop();
+  weekResults = snapshot.weekResults;
+  renderWeekResults();
+  updateWeekUndoButtons();
+  setWeekStatus('Undid last change.', '');
+};
+
+window.undoAllWeekChanges = function () {
+  if (!weekGenerationSnapshot) return;
+  weekResults = structuredClone(weekGenerationSnapshot.weekResults);
+  weekUndoStack = [];
+  renderWeekResults();
+  updateWeekUndoButtons();
+  setWeekStatus('Reverted every change back to right after generation.', '');
+};
 
 function mondayOf(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -1775,6 +1846,8 @@ async function generateWeek() {
   weekStartCoordsGlobal = weekStartCoords;
 
   const startTime = document.getElementById('weekStartTime').value || '08:00';
+  const returnTimeStr = document.getElementById('weekReturnTime').value;
+  const returnTimeMinutes = returnTimeStr ? timeInputValueToMinutes(returnTimeStr) : null;
   const visitDuration = parseFloat(document.getElementById('weekVisitDuration').value) || 15;
   const includeRecent = document.getElementById('weekIncludeRecent').checked;
   const routeDirection = document.getElementById('weekRouteDirection').value;
@@ -1821,13 +1894,16 @@ async function generateWeek() {
         continue;
       }
 
-      selection.scheduled.forEach(p => usedThisWeek.add(p.id));
-      const timing = await computeTimingForDay(weekStartCoords, selection.scheduled, startTime, visitDuration);
+      const timing = await trimStopsToReturnTime(weekStartCoords, selection.scheduled, startTime, visitDuration, returnTimeMinutes);
+      timing.stops.forEach(s => usedThisWeek.add(s.id));
 
       weekResults.push({
         date: dateStr, dayLabel: WEEK_DAY_LABELS[i], group, group2, stopCount, routeDirection,
         stops: timing.stops, totalHours: timing.totalHours, usingRealRoads: timing.usingRealRoads,
-        fillCount: selection.fillCount, excludedCount: selection.excludedCount
+        fillCount: selection.fillCount, excludedCount: selection.excludedCount,
+        dayStartMinutes: timing.dayStartMinutes, returnHomeMinutes: timing.returnHomeMinutes,
+        returnTripMinutes: timing.returnTripMinutes, returnTripMiles: timing.returnTripMiles,
+        returnTimeTarget: returnTimeMinutes, returnTimeException: timing.returnTimeException, returnTimeTrimmedCount: timing.trimmedCount
       });
     }
 
@@ -1835,6 +1911,9 @@ async function generateWeek() {
     const successDays = weekResults.filter(d => !d.error && !d.offDay).length;
     setWeekStatus(`Generated ${successDays} of 5 days. Review below, then Approve Whole Week.`, 'success');
     document.getElementById('approveWeekBtn').style.display = weekResults.some(d => !d.error) ? 'inline-block' : 'none';
+    weekGenerationSnapshot = snapshotWeekState();
+    weekUndoStack = [];
+    updateWeekUndoButtons();
   } catch (e) {
     console.error('generateWeek failed', e);
     setWeekStatus('Something went wrong generating the week. Try again.', 'error');
@@ -1885,6 +1964,14 @@ function renderWeekResults() {
     }
     const fillNote = day.fillCount > 0 ? ` — ${day.fillCount} pulled from nearby groups to fill the count` : '';
     const excludedNote = day.excludedCount > 0 ? ` — ${day.excludedCount} excluded (visited &lt;30 days)` : '';
+    const returnTimeNote = day.returnTimeException ? `
+      <div style="margin-top:10px; padding:10px; border-radius:var(--radius-sm); border:1px solid var(--pink-deep); background:rgba(238,126,171,0.1);">
+        <p style="margin:0; font-size:0.85rem; color:var(--pink-deep); font-weight:700;">‼️ Today you'll be home past ${minutesToClock(day.returnTimeTarget)} — everyone at one address had to stay together and alone that visit runs past your target return time.</p>
+      </div>
+    ` : (day.returnTimeTrimmedCount > 0 ? `
+      <p class="card-subtitle" style="color:var(--peach-deep);">⏱️ ${day.returnTimeTrimmedCount} patient(s) held back to make your ${minutesToClock(day.returnTimeTarget)} return time — still due, pick them up another day.</p>
+    ` : '');
+    const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
     return `
       <div class="week-result-card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
@@ -1892,19 +1979,55 @@ function renderWeekResults() {
           <button type="button" class="btn-tiny" onclick="window.openWeekDayInGoogleMaps(${dayIdx})">🗺️ Open in Google Maps</button>
           <button type="button" class="btn-tiny" onclick="window.openDayReviewModal('week', ${dayIdx})">📍 See Map View</button>
         </div>
-        <p class="wrc-meta">
-          Group ${escapeHtml(day.group === '__ANY__' ? 'Closest Mix' : day.group)}${day.group2 ? ` + ${escapeHtml(day.group2)}` : ''} · ${day.stops.length} stop(s) · ${day.totalHours.toFixed(1)} hrs
-          · ${day.usingRealRoads ? '✓ real road times' : '⚠ straight-line estimate'}${fillNote}${excludedNote}
+        <p class="card-subtitle" style="margin:6px 0;">
+          Group ${escapeHtml(day.group === '__ANY__' ? 'Closest Mix' : day.group)}${day.group2 ? ` + ${escapeHtml(day.group2)}` : ''}${fillNote}${excludedNote}
         </p>
-        ${day.stops.map((s, i) => `
-          <div class="week-stop-row">
-            <span>#${i + 1} ${escapeHtml(s.name)} (Grp- ${escapeHtml(s.group || '—')})</span>
-            <span>${minutesToClock(s.arrivalMinutes)}</span>
-          </div>
-        `).join('')}
+        <div class="route-summary" style="margin:10px 0;">
+          <span class="rs-item"><span class="rs-label">Start:</span> Home ${minutesToClock(day.dayStartMinutes)}</span>
+          <span class="rs-item"><span class="rs-label">Return trip:</span> 🚗 ${Math.round(day.returnTripMinutes)} min / ${day.returnTripMiles.toFixed(1)} mi</span>
+          <span class="rs-item"><span class="rs-label">Arrive home:</span> ${minutesToClock(day.returnHomeMinutes)}</span>
+          <span class="rs-item"><span class="rs-label">Stops:</span> ${day.stops.length}</span>
+          <span class="rs-item"><span class="rs-label">Total hrs:</span> ${day.totalHours.toFixed(1)}</span>
+          <span class="rs-item"><span class="rs-label">Total miles:</span> ${totalMiles.toFixed(1)} mi</span>
+          <span class="rs-item" style="color:${day.usingRealRoads ? 'var(--lime-deep)' : 'var(--pink-deep)'};">${day.usingRealRoads ? '✓ real road times' : '⚠ straight-line estimate'}</span>
+        </div>
+        ${returnTimeNote}
+        <p class="card-subtitle" style="margin-bottom:8px;">Drag a patient to another day's card to move them — group, remove, and time are all editable right here.</p>
+        <div class="week-card-droplist" data-day-idx="${dayIdx}">
+          ${day.stops.map((s, i) => {
+            const idleMin = idleGapBeforeStop(day.stops, i, parseFloat(document.getElementById('weekVisitDuration').value) || 15);
+            const idleRow = idleMin > 0 ? `<div class="idle-gap-row">⏱️ Idle: ${idleMin} min — room to add someone here</div>` : '';
+            return `
+            ${idleRow}
+            <div class="week-stop-row week-card-stop" draggable="true" data-day-idx="${dayIdx}" data-patient-id="${s.id}" style="flex-direction:column; align-items:stretch; gap:6px; cursor:grab;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span>⠿⠿ #${i + 1} ${escapeHtml(s.name)}</span>
+                <span>${minutesToClock(s.arrivalMinutes)}${s.manualArrivalOverride != null ? ' <span style="color:var(--pink-deep); font-weight:700; font-size:0.75em;">(edited)</span>' : ''}</span>
+              </div>
+              <div draggable="false" style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <select class="week-card-group-sel" data-day-idx="${dayIdx}" data-patient-id="${s.id}" style="font-size:0.78rem; padding:3px 6px; max-width:110px;">
+                  ${availableGroupLetters().map(l => `<option value="${l}" ${s.group === l ? 'selected' : ''}>Group ${l}</option>`).join('')}
+                </select>
+                <div style="display:flex; gap:4px;">
+                  <button type="button" class="btn-tiny" onclick="window.openEditArrivalWeekCard(${dayIdx}, '${s.id}')">✏️ Time</button>
+                  <button type="button" class="btn-tiny btn-tiny-danger" onclick="window.removeWeekCardStop(${dayIdx}, '${s.id}')">✖ Remove</button>
+                </div>
+              </div>
+            </div>
+          `; }).join('')}
+        </div>
       </div>
     `;
   }).join('');
+
+  container.querySelectorAll('.week-card-group-sel').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      const dayIdx = parseInt(e.target.getAttribute('data-day-idx'), 10);
+      window.changeWeekCardStopGroup(dayIdx, e.target.getAttribute('data-patient-id'), e.target.value);
+    });
+  });
+
+  attachWeekCardDragHandlers();
 }
 
 function setWeekStatus(msg, kind) {
@@ -1912,6 +2035,186 @@ function setWeekStatus(msg, kind) {
   el.textContent = msg;
   el.className = 'status-line' + (kind ? ' ' + kind : '');
 }
+
+let weekCardDraggedId = null;
+let weekCardDraggedFromDay = null;
+let weekCardDragBusy = false;
+
+function attachWeekCardDragHandlers() {
+  document.querySelectorAll('.week-card-stop').forEach(row => {
+    row.addEventListener('dragstart', () => {
+      weekCardDraggedId = row.getAttribute('data-patient-id');
+      weekCardDraggedFromDay = parseInt(row.getAttribute('data-day-idx'), 10);
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+  });
+
+  document.querySelectorAll('.week-card-droplist').forEach(zone => {
+    zone.addEventListener('dragover', (e) => e.preventDefault());
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const targetDayIdx = parseInt(zone.getAttribute('data-day-idx'), 10);
+      await handleWeekCardDrop(targetDayIdx, zone, e.clientY);
+    });
+  });
+}
+
+async function recomputeWeekDay(dayIdx) {
+  const day = weekResults[dayIdx];
+  if (!day) return;
+  const startCoords = weekStartCoordsGlobal;
+  const startTime = document.getElementById('weekStartTime').value || '08:00';
+  const visitDuration = parseFloat(document.getElementById('weekVisitDuration').value) || 15;
+
+  if (day.stops.length === 0) {
+    day.totalHours = 0;
+    return;
+  }
+  const timing = await computeTimingForDay(startCoords, day.stops, startTime, visitDuration);
+  day.stops = timing.stops;
+  day.totalHours = timing.totalHours;
+  day.usingRealRoads = timing.usingRealRoads;
+  day.dayStartMinutes = timing.dayStartMinutes;
+  day.returnHomeMinutes = timing.returnHomeMinutes;
+  day.returnTripMinutes = timing.returnTripMinutes;
+  day.returnTripMiles = timing.returnTripMiles;
+}
+
+async function handleWeekCardDrop(targetDayIdx, zoneEl, dropClientY) {
+  if (weekCardDragBusy) return;
+  if (weekCardDraggedId === null || weekCardDraggedFromDay === null) return;
+
+  pushWeekUndoSnapshot();
+
+  if (weekCardDraggedFromDay === targetDayIdx) {
+    const day = weekResults[targetDayIdx];
+    if (!day || !day.stops) { weekCardDraggedId = null; weekCardDraggedFromDay = null; return; }
+    const originalIdx = day.stops.findIndex(s => s.id === weekCardDraggedId);
+    if (originalIdx === -1) { weekCardDraggedId = null; weekCardDraggedFromDay = null; return; }
+
+    const [moved] = day.stops.splice(originalIdx, 1);
+    const items = zoneEl ? Array.from(zoneEl.querySelectorAll('.week-card-stop')) : [];
+    let insertAt = day.stops.length;
+    if (zoneEl && dropClientY != null) {
+      for (let i = 0; i < items.length; i++) {
+        const rect = items[i].getBoundingClientRect();
+        if (dropClientY < rect.top + rect.height / 2) { insertAt = i; break; }
+      }
+    }
+    day.stops.splice(insertAt, 0, moved);
+
+    weekCardDragBusy = true;
+    setWeekStatus('⏳ Recalculating...', '');
+    try {
+      await recomputeWeekDay(targetDayIdx);
+      const visitDuration = parseFloat(document.getElementById('weekVisitDuration').value) || 15;
+      await checkAndHandleAnchorOverflow(
+        day.stops,
+        async () => {
+          const idxNow = day.stops.findIndex(s => s.id === moved.id);
+          if (idxNow !== -1) day.stops.splice(idxNow, 1);
+          day.stops.splice(originalIdx, 0, moved);
+          await recomputeWeekDay(targetDayIdx);
+        }
+      );
+      renderWeekResults();
+      setWeekStatus('Reordered — times recalculated.', 'success');
+    } catch (e) {
+      console.error('handleWeekCardDrop (same-day) failed', e);
+      setWeekStatus(`Something went wrong reordering: ${e.message || e}`, 'error');
+    } finally {
+      weekCardDragBusy = false;
+      weekCardDraggedId = null;
+      weekCardDraggedFromDay = null;
+    }
+    return;
+  }
+
+  const fromDay = weekResults[weekCardDraggedFromDay];
+  const toDay = weekResults[targetDayIdx];
+  if (!fromDay || !toDay || !fromDay.stops || !toDay.stops) { weekCardDraggedId = null; weekCardDraggedFromDay = null; return; }
+
+  const idx = fromDay.stops.findIndex(s => s.id === weekCardDraggedId);
+  if (idx === -1) { weekCardDraggedId = null; weekCardDraggedFromDay = null; return; }
+
+  weekCardDragBusy = true;
+  setWeekStatus('⏳ Moving patient and recalculating both days...', '');
+  try {
+    const [moved] = fromDay.stops.splice(idx, 1);
+    await recomputeWeekDay(weekCardDraggedFromDay);
+
+    const startCoords = weekStartCoordsGlobal;
+    let newOrder = nearestNeighborOrder(startCoords.lat, startCoords.lng, toDay.stops.concat([moved]));
+    if (toDay.routeDirection === 'furthest') newOrder = newOrder.slice().reverse();
+    toDay.stops = newOrder;
+    await recomputeWeekDay(targetDayIdx);
+
+    await checkAndHandleAnchorOverflow(
+      toDay.stops,
+      async () => {
+        toDay.stops = toDay.stops.filter(s => s.id !== moved.id);
+        fromDay.stops.push(moved);
+        await recomputeWeekDay(targetDayIdx);
+        await recomputeWeekDay(weekCardDraggedFromDay);
+      }
+    );
+
+    renderWeekResults();
+    setWeekStatus('Moved — both days recalculated.', 'success');
+  } catch (e) {
+    console.error('handleWeekCardDrop (cross-day) failed', e);
+    setWeekStatus(`Something went wrong moving that patient: ${e.message || e}`, 'error');
+  } finally {
+    weekCardDragBusy = false;
+    weekCardDraggedId = null;
+    weekCardDraggedFromDay = null;
+  }
+}
+
+window.changeWeekCardStopGroup = function (dayIdx, patientId, newGroup) {
+  const day = weekResults[dayIdx];
+  if (!day || !day.stops) return;
+  const stop = day.stops.find(s => s.id === patientId);
+  if (!stop) return;
+  pushWeekUndoSnapshot();
+  stop.group = newGroup;
+  const master = patients.find(p => p.id === patientId);
+  if (master) { master.manualGroup = true; master.group = newGroup; savePatients(); }
+};
+
+window.removeWeekCardStop = async function (dayIdx, patientId) {
+  const day = weekResults[dayIdx];
+  if (!day || !day.stops) return;
+  if (!day.stops.some(s => s.id === patientId)) return;
+  pushWeekUndoSnapshot();
+  day.stops = day.stops.filter(s => s.id !== patientId);
+
+  weekCardDragBusy = true;
+  setWeekStatus('⏳ Recalculating this day...', '');
+  try {
+    await recomputeWeekDay(dayIdx);
+    renderWeekResults();
+    setWeekStatus('Removed — day recalculated.', 'success');
+  } finally {
+    weekCardDragBusy = false;
+  }
+};
+
+window.openEditArrivalWeekCard = function (dayIdx, patientId) {
+  const day = weekResults[dayIdx];
+  if (!day || !day.stops) return;
+  const p = day.stops.find(s => s.id === patientId);
+  if (!p || p.arrivalMinutes === undefined) return;
+  pendingArrivalEdit = { context: 'weekcard', patientId, dayIdx };
+
+  document.getElementById('editArrivalSubtitle').textContent = `${p.name} — adjust arrival time for this day.`;
+  document.getElementById('editArrivalInput').value = minutesToTimeInputValue(p.arrivalMinutes);
+  document.getElementById('editArrivalNote').textContent = 'Every patient scheduled after this one that day will shift by the same amount.';
+  document.getElementById('editArrivalNote').className = 'status-line';
+  document.getElementById('editArrivalResetBtn').style.display = 'none';
+  document.getElementById('editArrivalModal').style.display = 'flex';
+};
 
 /**
  * Detects a patient already approved on a DIFFERENT date than the one
@@ -1985,8 +2288,11 @@ function commitApproveWeek() {
 
 function cancelWeek() {
   weekResults = [];
+  weekUndoStack = [];
+  weekGenerationSnapshot = null;
   document.getElementById('weekResults').innerHTML = '';
   document.getElementById('approveWeekBtn').style.display = 'none';
+  updateWeekUndoButtons();
   setWeekStatus('Week cleared.', '');
 }
 
@@ -2100,6 +2406,8 @@ function wireWeeklyUI() {
   document.getElementById('generateWeekBtn').addEventListener('click', generateWeek);
   document.getElementById('approveWeekBtn').addEventListener('click', approveWeek);
   document.getElementById('cancelWeekBtn').addEventListener('click', cancelWeek);
+  document.getElementById('undoWeekBtn').addEventListener('click', window.undoWeekChange);
+  document.getElementById('undoAllWeekBtn').addEventListener('click', window.undoAllWeekChanges);
 
   document.querySelectorAll('.workDayToggle').forEach(cb => {
     cb.addEventListener('change', (e) => {
@@ -2123,6 +2431,7 @@ function wireWeeklyUI() {
    ============================================ */
 let monthResults = []; // [{date, stops, totalHours, usingRealRoads, emptyGroup?, addressOverride?, stopCount}]
 let monthAcknowledgedOverCapacity = new Set(); // dayIdx values the user has confirmed are okay to approve as-is
+let monthAcknowledgedReturnTimeException = new Set(); // dayIdx values acknowledged for running past the return-time target
 let monthStartCoordsGlobal = null;
 
 /* ============================================
@@ -2138,7 +2447,11 @@ let monthGenerationSnapshot = null;
 const MONTH_UNDO_MAX = 100;
 
 function snapshotMonthState() {
-  return { monthResults: structuredClone(monthResults), acknowledged: new Set(monthAcknowledgedOverCapacity) };
+  return {
+    monthResults: structuredClone(monthResults),
+    acknowledged: new Set(monthAcknowledgedOverCapacity),
+    acknowledgedReturnTime: new Set(monthAcknowledgedReturnTimeException)
+  };
 }
 
 function pushMonthUndoSnapshot() {
@@ -2159,6 +2472,7 @@ window.undoMonthChange = function () {
   const snapshot = monthUndoStack.pop();
   monthResults = snapshot.monthResults;
   monthAcknowledgedOverCapacity = snapshot.acknowledged;
+  monthAcknowledgedReturnTimeException = snapshot.acknowledgedReturnTime || new Set();
   renderMonthResults();
   updateMonthUndoButtons();
   setMonthStatus('Undid last change.', '');
@@ -2168,6 +2482,7 @@ window.undoAllMonthChanges = function () {
   if (!monthGenerationSnapshot) return;
   monthResults = structuredClone(monthGenerationSnapshot.monthResults);
   monthAcknowledgedOverCapacity = new Set(monthGenerationSnapshot.acknowledged);
+  monthAcknowledgedReturnTimeException = new Set(monthGenerationSnapshot.acknowledgedReturnTime || []);
   monthUndoStack = [];
   renderMonthResults();
   updateMonthUndoButtons();
@@ -2269,6 +2584,8 @@ async function generateMonth() {
   const group = document.getElementById('monthGroupSelect').value;
   const stopCount = parseInt(document.getElementById('monthStopCount').value, 10) || 8;
   const startTime = document.getElementById('monthStartTime').value || '08:00';
+  const returnTimeStr = document.getElementById('monthReturnTime').value;
+  const returnTimeMinutes = returnTimeStr ? timeInputValueToMinutes(returnTimeStr) : null;
   const visitDuration = parseFloat(document.getElementById('monthVisitDuration').value) || 15;
   const includeRecent = document.getElementById('monthIncludeRecent').checked;
   const routeDirection = document.getElementById('monthRouteDirection').value;
@@ -2324,18 +2641,20 @@ async function generateMonth() {
 
   monthResults = [];
   monthAcknowledgedOverCapacity = new Set();
+  monthAcknowledgedReturnTimeException = new Set();
   const daysToUse = Math.min(workingDays.length, chunks.length);
 
   try {
     for (let i = 0; i < daysToUse; i++) {
       setMonthStatus(`Generating day ${i + 1} of ${daysToUse}...`, '');
       try {
-        const timing = await computeTimingForDay(startCoords, chunks[i], startTime, visitDuration);
+        const timing = await trimStopsToReturnTime(startCoords, chunks[i], startTime, visitDuration, returnTimeMinutes);
         monthResults.push({
           date: workingDays[i], stops: timing.stops, totalHours: timing.totalHours, usingRealRoads: timing.usingRealRoads,
           routeDirection, stopCount, addressOverride: timing.stops.length > stopCount,
           dayStartMinutes: timing.dayStartMinutes, returnHomeMinutes: timing.returnHomeMinutes,
-          returnTripMinutes: timing.returnTripMinutes, returnTripMiles: timing.returnTripMiles
+          returnTripMinutes: timing.returnTripMinutes, returnTripMiles: timing.returnTripMiles,
+          returnTimeTarget: returnTimeMinutes, returnTimeException: timing.returnTimeException, returnTimeTrimmedCount: timing.trimmedCount
         });
       } catch (dayErr) {
         // One bad day (e.g. a routing-service hiccup on an unusual chunk)
@@ -2451,6 +2770,17 @@ function renderMonthDayCard(day, dayIdx) {
       </label>
     </div>
   ` : '';
+  const returnTimeNote = day.returnTimeException ? `
+    <div style="margin-top:10px; padding:10px; border-radius:var(--radius-sm); border:1px solid var(--pink-deep); background:rgba(238,126,171,0.1);">
+      <p style="margin:0 0 8px; font-size:0.85rem; color:var(--pink-deep); font-weight:700;">‼️ Today you'll be home past ${minutesToClock(day.returnTimeTarget)} — everyone at one address had to stay together and alone that visit runs past your target return time.</p>
+      <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer;">
+        <input type="checkbox" class="monthReturnTimeAck" data-day="${dayIdx}" ${monthAcknowledgedReturnTimeException.has(dayIdx) ? 'checked' : ''}>
+        I've reviewed this and it's okay to approve as-is
+      </label>
+    </div>
+  ` : (day.returnTimeTrimmedCount > 0 ? `
+    <p class="card-subtitle" style="color:var(--peach-deep);">⏱️ ${day.returnTimeTrimmedCount} patient(s) held back to make your ${minutesToClock(day.returnTimeTarget)} return time — still due, pick them up next month or on an ad-hoc day.</p>
+  ` : '');
   const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
   const dateHeader = isUndated
     ? `<h3 class="month-card-date-label" style="color:var(--pink-deep); cursor:default;">${label}</h3>`
@@ -2484,9 +2814,14 @@ function renderMonthDayCard(day, dayIdx) {
         <span class="rs-item" style="color:${day.usingRealRoads ? 'var(--lime-deep)' : 'var(--pink-deep)'};">${day.usingRealRoads ? '✓ real road times' : '⚠ straight-line estimate'}</span>
       </div>
       ${overCapNote}
+      ${returnTimeNote}
       <p class="card-subtitle" style="margin-bottom:8px;">${isUndated ? 'Pick a date above to place this day — route and timing stay exactly as they are.' : "Drag a patient to another day's card to move them — group, remove, and time are all editable right here."}</p>
       <div class="month-card-droplist" data-day-idx="${dayIdx}">
-        ${day.stops.map((s, i) => `
+        ${day.stops.map((s, i) => {
+          const idleMin = idleGapBeforeStop(day.stops, i, parseFloat(document.getElementById('monthVisitDuration').value) || 15);
+          const idleRow = idleMin > 0 ? `<div class="idle-gap-row">⏱️ Idle: ${idleMin} min — room to add someone here</div>` : '';
+          return `
+          ${idleRow}
           <div class="week-stop-row month-card-stop" draggable="true" data-day-idx="${dayIdx}" data-patient-id="${s.id}" style="flex-direction:column; align-items:stretch; gap:6px; cursor:grab;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
               <span>⠿⠿ #${i + 1} ${escapeHtml(s.name)}</span>
@@ -2502,7 +2837,7 @@ function renderMonthDayCard(day, dayIdx) {
               </div>
             </div>
           </div>
-        `).join('')}
+        `; }).join('')}
       </div>
     </div>
   `;
@@ -2533,6 +2868,14 @@ function renderMonthResults() {
       const idx = parseInt(e.target.getAttribute('data-day'), 10);
       if (e.target.checked) monthAcknowledgedOverCapacity.add(idx);
       else monthAcknowledgedOverCapacity.delete(idx);
+    });
+  });
+
+  container.querySelectorAll('.monthReturnTimeAck').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.getAttribute('data-day'), 10);
+      if (e.target.checked) monthAcknowledgedReturnTimeException.add(idx);
+      else monthAcknowledgedReturnTimeException.delete(idx);
     });
   });
 
@@ -2819,12 +3162,21 @@ window.openMonthDayInGoogleMaps = function (dayIdx) {
 };
 
 function approveMonth() {
-  const unacknowledged = monthResults
+  const unacknowledgedCap = monthResults
     .map((d, i) => ({ d, i }))
     .filter(({ d, i }) => d.addressOverride && !monthAcknowledgedOverCapacity.has(i));
-  if (unacknowledged.length > 0) {
-    const dates = unacknowledged.map(({ d }) => d.date).join(', ');
+  if (unacknowledgedCap.length > 0) {
+    const dates = unacknowledgedCap.map(({ d }) => d.date).join(', ');
     alert(`Check the acknowledgment box on the over-capacity day(s) first (${dates}) before approving the month.`);
+    return;
+  }
+
+  const unacknowledgedReturnTime = monthResults
+    .map((d, i) => ({ d, i }))
+    .filter(({ d, i }) => d.returnTimeException && !monthAcknowledgedReturnTimeException.has(i));
+  if (unacknowledgedReturnTime.length > 0) {
+    const dates = unacknowledgedReturnTime.map(({ d }) => d.date).join(', ');
+    alert(`Check the acknowledgment box on the day(s) running past your return time first (${dates}) before approving the month.`);
     return;
   }
 
@@ -3021,7 +3373,12 @@ let dayReviewDraggedId = null;
 function renderDayReviewList() {
   const el = document.getElementById('dayReviewList');
   document.getElementById('dayReviewCount').textContent = dayReviewContext.computedStops.length;
-  el.innerHTML = `<ul class="drag-list" id="dayReviewDragList">` + dayReviewContext.computedStops.map((s, i) => `
+  const visitDuration = dayReviewContext.visitDuration || 15;
+  el.innerHTML = `<ul class="drag-list" id="dayReviewDragList">` + dayReviewContext.computedStops.map((s, i) => {
+    const idleMin = idleGapBeforeStop(dayReviewContext.computedStops, i, visitDuration);
+    const idleRow = idleMin > 0 ? `<li class="idle-gap-row">⏱️ Idle: ${idleMin} min — room to add someone here</li>` : '';
+    return `
+    ${idleRow}
     <li class="drag-item" draggable="true" data-id="${s.id}">
       <div class="di-name">#${i + 1} ${escapeHtml(s.name)}${s.group ? ` <span style="color:var(--text-soft); font-weight:600; font-size:0.8em;">(Grp- ${escapeHtml(s.group)})</span>` : ''}</div>
       <div class="di-meta">${minutesToClock(s.arrivalMinutes)} — ${escapeHtml(s.address || '')}</div>
@@ -3029,7 +3386,7 @@ function renderDayReviewList() {
         <button type="button" class="btn-tiny btn-tiny-danger" onclick="window.removeFromDayReview('${s.id}')">✖ Remove</button>
       </div>
     </li>
-  `).join('') + `</ul>`;
+  `; }).join('') + `</ul>`;
   attachDayReviewDragHandlers();
 }
 
@@ -3253,6 +3610,21 @@ function renderDayReviewSearchResults(term) {
   container.style.display = 'block';
 }
 
+// Compares a stop's actual arrival against when it would naturally have
+// been reached (previous stop's finish + real travel time). For a normal
+// transition these are equal — a gap only appears when something forced
+// the cursor to jump ahead, which today only happens for a fixed-time
+// anchor running comfortably early. Rounds off sub-minute noise.
+function idleGapBeforeStop(stops, i, visitDuration) {
+  if (i === 0) return 0;
+  const prev = stops[i - 1];
+  const cur = stops[i];
+  const prevFinish = prev.arrivalMinutes + (prev.visitDuration || visitDuration);
+  const naturalArrival = prevFinish + (cur.travelMinutes || 0);
+  const idle = cur.arrivalMinutes - naturalArrival;
+  return idle > 1 ? Math.round(idle) : 0;
+}
+
 // Shared by both single-patient and "add all" flows — applies a list of
 // additions, tracks pending cross-day pulls for each, re-optimizes order,
 // and re-applies this day's route direction (nearestNeighborOrder is
@@ -3378,6 +3750,7 @@ window.confirmDayReview = async function () {
   const results = getBatchResults(batchType);
 
   if (batchType === 'month') pushMonthUndoSnapshot();
+  if (batchType === 'week') pushWeekUndoSnapshot();
 
   const btn = document.getElementById('dayReviewConfirmBtn');
   btn.disabled = true;
@@ -3483,6 +3856,10 @@ async function generateRoute() {
   const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
   const includeRecent = document.getElementById('includeRecent').checked;
   const routeDirection = document.getElementById('routeDirection').value;
+  const startTimeStr = document.getElementById('startTime').value || '08:00';
+  const visitDuration = parseFloat(document.getElementById('visitDuration').value) || 15;
+  const returnTimeStr = document.getElementById('returnTime').value;
+  const returnTimeMinutes = returnTimeStr ? timeInputValueToMinutes(returnTimeStr) : null;
   const isMixMode = group === '__ANY__';
   const strictGroup = !isMixMode; // picking a specific group = stay in it by default; "Closest Mix" = ignore group boundaries
 
@@ -3502,22 +3879,39 @@ async function generateRoute() {
     const result = selectRoutePatients({ group, group2, stopCount, startCoords, scheduleDate, includeRecent, routeDirection });
     if (result.error) { setScheduleStatus(result.error, 'error'); return; }
 
-    scheduledPatients = result.scheduled;
-    leftoverPatients = result.leftover;
+    let finalScheduled = result.scheduled;
+    let returnTimeException = false;
+    let returnTimeTrimmedCount = 0;
+    if (returnTimeMinutes) {
+      const trimResult = await trimStopsToReturnTime(startCoords, result.scheduled, startTimeStr, visitDuration, returnTimeMinutes);
+      const keptIds = new Set(trimResult.stops.map(s => s.id));
+      finalScheduled = result.scheduled.filter(p => keptIds.has(p.id));
+      returnTimeException = trimResult.returnTimeException;
+      returnTimeTrimmedCount = result.scheduled.length - finalScheduled.length;
+    }
+
+    scheduledPatients = finalScheduled;
+    // Anyone trimmed for return-time goes back into the available pool —
+    // still due, just not automatically included today.
+    const trimmedOut = result.scheduled.filter(p => !finalScheduled.some(f => f.id === p.id));
+    leftoverPatients = result.leftover.concat(trimmedOut);
 
     document.getElementById('routeBuilderCard').style.display = 'block';
     await recalcAndRender();
     const addedNote = result.addressMateCount > 0 ? ` (+${result.addressMateCount} same-address patient(s) added automatically.)` : '';
     const excludedNote = result.excludedCount > 0 ? ` (${result.excludedCount} recently-visited patient(s) excluded.)` : '';
+    const returnTimeNote = returnTimeException
+      ? ` ‼️ You'll be home past ${minutesToClock(returnTimeMinutes)} — everyone at one address had to stay together and alone that visit runs past your target return time.`
+      : (returnTimeTrimmedCount > 0 ? ` ⏱️ ${returnTimeTrimmedCount} patient(s) held back to make your ${minutesToClock(returnTimeMinutes)} return time — still due, available to add another day.` : '');
     let statusMsg;
     if (result.strictGroup) {
       const fillNote = result.fillCount > 0 ? ` Group ${group} only had ${result.groupOnlyCount} available, so ${result.fillCount} nearby patient(s) from other groups were added to reach ${stopCount}.` : '';
-      statusMsg = `Route generated for Group ${group}${group2 ? ' + ' + group2 : ''}.` + excludedNote + addedNote + fillNote;
+      statusMsg = `Route generated for Group ${group}${group2 ? ' + ' + group2 : ''}.` + excludedNote + addedNote + fillNote + returnTimeNote;
     } else {
       const groupsUsed = Array.from(new Set(scheduledPatients.map(p => p.group || 'unassigned'))).sort();
-      statusMsg = `Route generated: closest ${scheduledPatients.length} patient(s) to your starting address, drawn from group(s) ${groupsUsed.join(', ')}.` + excludedNote + addedNote;
+      statusMsg = `Route generated: closest ${scheduledPatients.length} patient(s) to your starting address, drawn from group(s) ${groupsUsed.join(', ')}.` + excludedNote + addedNote + returnTimeNote;
     }
-    setScheduleStatus(statusMsg, 'success');
+    setScheduleStatus(statusMsg, returnTimeException ? 'error' : 'success');
   } catch (e) {
     console.error('generateRoute failed', e);
     setScheduleStatus('Something went wrong generating the route. Try again.', 'error');
@@ -3935,11 +4329,17 @@ function wireScheduleUI() {
    EDIT PATIENT
    ============================================ */
 let editingPatientId = null;
+let editManualLat = null;
+let editManualLng = null;
+let editManualMap = null;
+let editManualMarker = null;
 
 window.openEditPatient = function (patientId) {
   const p = patients.find(pt => pt.id === patientId);
   if (!p) return;
   editingPatientId = patientId;
+  editManualLat = null;
+  editManualLng = null;
   document.getElementById('editName').value = p.name || '';
   document.getElementById('editAddress').value = p.address || '';
   document.getElementById('editDob').value = p.dob || '';
@@ -3947,8 +4347,52 @@ window.openEditPatient = function (patientId) {
   document.getElementById('editProvider').value = p.provider || '';
   document.getElementById('editLastVisit').value = p.lastVisitDate || '';
   document.getElementById('editStatus').textContent = '';
+
+  const wrap = document.getElementById('editManualPlaceWrap');
+  const needsManualPlacement = p.lat === null || p.lng === null || p.geocodeFailed;
+  wrap.style.display = needsManualPlacement ? 'block' : 'none';
+  document.getElementById('editManualCoordsLabel').textContent = '';
+
   document.getElementById('editPatientModal').style.display = 'flex';
+
+  if (needsManualPlacement) {
+    // Defer to the next tick so the modal is actually visible before Leaflet measures the container.
+    setTimeout(() => initEditManualMap(p), 50);
+  }
 };
+
+function initEditManualMap(p) {
+  if (editManualMap) { editManualMap.remove(); editManualMap = null; }
+  editManualMarker = null;
+
+  // Center on the practice's saved starting address as a reasonable default
+  // service-area view — the person zooms/pans from there to find the house.
+  const saved = loadStartAddresses();
+  const center = (p.lat !== null && p.lng !== null)
+    ? [p.lat, p.lng]
+    : (saved.length > 0 ? [saved[0].lat, saved[0].lng] : [32.7767, -96.7970]); // DFW area fallback if nothing else is set
+
+  editManualMap = L.map('editManualMap').setView(center, 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(editManualMap);
+
+  if (p.lat !== null && p.lng !== null) {
+    editManualMarker = L.marker([p.lat, p.lng]).addTo(editManualMap);
+    editManualLat = p.lat; editManualLng = p.lng;
+  }
+
+  editManualMap.on('click', (e) => {
+    editManualLat = e.latlng.lat;
+    editManualLng = e.latlng.lng;
+    if (editManualMarker) editManualMarker.setLatLng(e.latlng);
+    else editManualMarker = L.marker(e.latlng).addTo(editManualMap);
+    document.getElementById('editManualCoordsLabel').textContent = `Location set: ${editManualLat.toFixed(5)}, ${editManualLng.toFixed(5)}`;
+  });
+
+  setTimeout(() => editManualMap.invalidateSize(), 100);
+}
 
 async function saveEditedPatient() {
   const p = patients.find(pt => pt.id === editingPatientId);
@@ -3964,7 +4408,12 @@ async function saveEditedPatient() {
   p.provider = document.getElementById('editProvider').value.trim();
   p.lastVisitDate = document.getElementById('editLastVisit').value || null;
 
-  if (addressChanged) {
+  if (editManualLat !== null && editManualLng !== null) {
+    // Manual placement was made this session — this always wins over
+    // auto-geocoding, since it's a deliberate correction for an address
+    // the geocoder couldn't find on its own.
+    p.lat = editManualLat; p.lng = editManualLng; p.geocodeFailed = false;
+  } else if (addressChanged) {
     const statusEl = document.getElementById('editStatus');
     statusEl.textContent = 'Re-checking that address...';
     try {
@@ -3983,7 +4432,12 @@ async function saveEditedPatient() {
   savePatients();
   renderTable();
   populateProviderFilter();
-  if (addressChanged) regroup(); else renderGroupSummary();
+  const gotNewCoords = editManualLat !== null && editManualLng !== null;
+  if (addressChanged || gotNewCoords) regroup(); else renderGroupSummary();
+
+  if (editManualMap) { editManualMap.remove(); editManualMap = null; }
+  editManualLat = null;
+  editManualLng = null;
 
   document.getElementById('editPatientModal').style.display = 'none';
   editingPatientId = null;
@@ -3994,6 +4448,9 @@ function wireEditModal() {
   document.getElementById('editCancelBtn').addEventListener('click', () => {
     document.getElementById('editPatientModal').style.display = 'none';
     editingPatientId = null;
+    if (editManualMap) { editManualMap.remove(); editManualMap = null; }
+    editManualLat = null;
+    editManualLng = null;
   });
 }
 
@@ -4440,6 +4897,65 @@ async function commitArrivalEdit() {
         } catch (e) {
           console.error('commitArrivalEdit (monthcard) failed', e);
           setMonthStatus(`Something went wrong updating the time: ${e.message || e}`, 'error');
+        }
+      }
+    }
+  } else if (pendingArrivalEdit.context === 'weekcard') {
+    const dayIdx = pendingArrivalEdit.dayIdx;
+    const patientId = pendingArrivalEdit.patientId;
+    const day = weekResults[dayIdx];
+    document.getElementById('editArrivalModal').style.display = 'none';
+    pendingArrivalEdit = null;
+
+    if (day && day.stops) {
+      const idx = day.stops.findIndex(p => p.id === patientId);
+      if (idx !== -1) {
+        pushWeekUndoSnapshot();
+        setWeekStatus('⏳ Recalculating around the new time...', '');
+        try {
+          const anchor = day.stops[idx];
+          const remaining = day.stops.filter(s => s.id !== anchor.id);
+          const startCoords = weekStartCoordsGlobal;
+          const startTime = document.getElementById('weekStartTime').value || '08:00';
+          const visitDuration = parseFloat(document.getElementById('weekVisitDuration').value) || 15;
+
+          if (remaining.length === 0) {
+            anchor.manualArrivalOverride = newMinutes;
+            const timing = await computeTimingForDay(startCoords, [anchor], startTime, visitDuration);
+            day.stops = timing.stops;
+            day.totalHours = timing.totalHours;
+            day.usingRealRoads = timing.usingRealRoads;
+            day.dayStartMinutes = timing.dayStartMinutes;
+            day.returnHomeMinutes = timing.returnHomeMinutes;
+            day.returnTripMinutes = timing.returnTripMinutes;
+            day.returnTripMiles = timing.returnTripMiles;
+          } else {
+            const reordered = nearestNeighborOrder(startCoords.lat, startCoords.lng, remaining);
+            const remainingTiming = await computeTimingForDay(startCoords, reordered, startTime, visitDuration);
+
+            let insertAt = remainingTiming.stops.length;
+            for (let i = 0; i < remainingTiming.stops.length; i++) {
+              const finishTime = remainingTiming.stops[i].arrivalMinutes + (remainingTiming.stops[i].visitDuration || visitDuration);
+              if (finishTime > newMinutes) { insertAt = i; break; }
+            }
+
+            const finalOrder = remainingTiming.stops.slice();
+            finalOrder.splice(insertAt, 0, { ...anchor, manualArrivalOverride: newMinutes });
+
+            const finalTiming = await computeTimingForDay(startCoords, finalOrder, startTime, visitDuration);
+            day.stops = finalTiming.stops;
+            day.totalHours = finalTiming.totalHours;
+            day.usingRealRoads = finalTiming.usingRealRoads;
+            day.dayStartMinutes = finalTiming.dayStartMinutes;
+            day.returnHomeMinutes = finalTiming.returnHomeMinutes;
+            day.returnTripMinutes = finalTiming.returnTripMinutes;
+            day.returnTripMiles = finalTiming.returnTripMiles;
+          }
+          renderWeekResults();
+          setWeekStatus('Time updated — day recalculated around the new anchor.', 'success');
+        } catch (e) {
+          console.error('commitArrivalEdit (weekcard) failed', e);
+          setWeekStatus(`Something went wrong updating the time: ${e.message || e}`, 'error');
         }
       }
     }
