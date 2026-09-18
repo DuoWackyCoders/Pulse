@@ -31,19 +31,44 @@
       </svg>
       <span class="brand-name">PULSE</span>
     </div>
-    <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">Log in or create an account to continue.</p>
+    <div id="authLoginView">
+      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">Log in or create an account to continue.</p>
 
-    <label class="field">Email
-      <input type="email" id="authEmail" autocomplete="email" placeholder="you@example.com">
-    </label>
-    <label class="field" style="margin-top:12px;">Password
-      <input type="password" id="authPassword" autocomplete="current-password" placeholder="At least 6 characters">
-    </label>
+      <label class="field">Email
+        <input type="email" id="authEmail" autocomplete="email" placeholder="you@example.com">
+      </label>
+      <label class="field" style="margin-top:12px;">Password
+        <input type="password" id="authPassword" autocomplete="current-password" placeholder="At least 6 characters">
+      </label>
 
-    <div style="display:flex; gap:10px; margin-top:18px;">
-      <button id="authLogInBtn" class="btn btn-primary" type="button" style="flex:1;">Log In</button>
-      <button id="authSignUpBtn" class="btn btn-secondary" type="button" style="flex:1;">Sign Up</button>
+      <div style="display:flex; gap:10px; margin-top:18px;">
+        <button id="authLogInBtn" class="btn btn-primary" type="button" style="flex:1;">Log In</button>
+        <button id="authSignUpBtn" class="btn btn-secondary" type="button" style="flex:1;">Sign Up</button>
+      </div>
+      <button id="showForgotPasswordBtn" type="button" class="auth-link-btn">Forgot password?</button>
     </div>
+
+    <div id="authResetView" style="display:none;">
+      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">Enter your email and we'll send you a link to reset your password.</p>
+      <label class="field">Email
+        <input type="email" id="resetEmail" autocomplete="email" placeholder="you@example.com">
+      </label>
+      <div style="display:flex; gap:10px; margin-top:18px;">
+        <button id="sendResetEmailBtn" class="btn btn-primary" type="button" style="flex:1;">Send Reset Link</button>
+      </div>
+      <button id="backToLoginBtn" type="button" class="auth-link-btn">← Back to log in</button>
+    </div>
+
+    <div id="authNewPasswordView" style="display:none;">
+      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">Choose a new password.</p>
+      <label class="field">New password
+        <input type="password" id="newPasswordInput" autocomplete="new-password" placeholder="At least 6 characters">
+      </label>
+      <div style="display:flex; gap:10px; margin-top:18px;">
+        <button id="setNewPasswordBtn" class="btn btn-primary" type="button" style="flex:1;">Set New Password</button>
+      </div>
+    </div>
+
     <p id="authStatus" class="status-line" style="margin-top:12px;"></p>
   </div>
 </div>

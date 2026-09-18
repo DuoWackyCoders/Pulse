@@ -18,6 +18,28 @@ function showApp(session) {
 function showAuthScreen() {
   document.getElementById('authScreen').style.display = 'flex';
   document.getElementById('appRoot').style.display = 'none';
+  showLoginView();
+}
+
+function showLoginView() {
+  document.getElementById('authLoginView').style.display = 'block';
+  document.getElementById('authResetView').style.display = 'none';
+  document.getElementById('authNewPasswordView').style.display = 'none';
+  setAuthStatus('', '');
+}
+
+function showResetView() {
+  document.getElementById('authLoginView').style.display = 'none';
+  document.getElementById('authResetView').style.display = 'block';
+  document.getElementById('authNewPasswordView').style.display = 'none';
+  setAuthStatus('', '');
+}
+
+function showNewPasswordView() {
+  document.getElementById('authLoginView').style.display = 'none';
+  document.getElementById('authResetView').style.display = 'none';
+  document.getElementById('authNewPasswordView').style.display = 'block';
+  setAuthStatus('', '');
 }
 
 function setAuthStatus(msg, kind) {
@@ -32,7 +54,15 @@ async function handleSignUp() {
   const password = document.getElementById('authPassword').value;
   if (!email || !password) { setAuthStatus('Enter an email and password first.', 'error'); return; }
   setAuthStatus('Creating your account...', '');
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  // Explicitly tell Supabase where the confirmation link should send them
+  // back to, rather than relying on the project's Site URL setting alone —
+  // that setting still needs to allow this URL (Authentication -> URL
+  // Configuration), but this avoids depending on it defaulting correctly.
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname }
+  });
   if (error) { setAuthStatus(error.message, 'error'); return; }
   if (data.session) {
     // Email confirmation is off — signUp already logs them in, onAuthStateChange takes it from here.
@@ -56,6 +86,29 @@ async function handleLogOut() {
   await supabaseClient.auth.signOut();
 }
 
+async function handleSendResetEmail() {
+  const email = document.getElementById('resetEmail').value.trim();
+  if (!email) { setAuthStatus('Enter your email first.', 'error'); return; }
+  setAuthStatus('Sending reset link...', '');
+  // redirectTo must be on Supabase's allowed redirect list (Authentication ->
+  // URL Configuration) or the emailed link won't come back here.
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+  if (error) { setAuthStatus(error.message, 'error'); return; }
+  setAuthStatus('Check your email for a reset link.', 'success');
+}
+
+async function handleSetNewPassword() {
+  const newPassword = document.getElementById('newPasswordInput').value;
+  if (!newPassword || newPassword.length < 6) { setAuthStatus('Password must be at least 6 characters.', 'error'); return; }
+  setAuthStatus('Updating password...', '');
+  const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+  if (error) { setAuthStatus(error.message, 'error'); return; }
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) showApp(session);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('authSignUpBtn').addEventListener('click', handleSignUp);
   document.getElementById('authLogInBtn').addEventListener('click', handleLogIn);
@@ -64,10 +117,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') handleLogIn();
   });
 
+  document.getElementById('showForgotPasswordBtn').addEventListener('click', showResetView);
+  document.getElementById('backToLoginBtn').addEventListener('click', showLoginView);
+  document.getElementById('sendResetEmailBtn').addEventListener('click', handleSendResetEmail);
+  document.getElementById('setNewPasswordBtn').addEventListener('click', handleSetNewPassword);
+
   // Fires once immediately with whatever session already exists (or none),
   // then again on every future login/logout — this single listener is what
-  // decides which screen is showing at all times.
+  // decides which screen is showing at all times. A password-reset link
+  // lands here as its own event, distinct from a normal login, so it gets
+  // routed to the "set a new password" view instead of straight into the app.
   supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') { showNewPasswordView(); return; }
     if (session) showApp(session);
     else showAuthScreen();
   });

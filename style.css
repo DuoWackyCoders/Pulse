@@ -419,6 +419,22 @@ body {
   overflow-wrap: anywhere;
 }
 
+.auth-link-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: none;
+  border: none;
+  color: var(--text-soft);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-top: 14px;
+  padding: 4px;
+}
+.auth-link-btn:hover { color: var(--pink-deep); text-decoration: underline; }
+
 /* ============================================
    CARDS / SECTIONS
    ============================================ */
