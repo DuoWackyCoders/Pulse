@@ -14,7 +14,41 @@
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 </head>
 <body>
-<div class="app-container">
+
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="brand" style="justify-content:center; margin-bottom:6px;">
+      <svg class="brand-mark" viewBox="0 0 60 24" aria-hidden="true">
+        <polyline points="0,12 14,12 18,3 24,21 30,8 34,16 38,12 60,12"
+          fill="none" stroke="url(#authPulseGradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="authPulseGradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="var(--pink)"/>
+            <stop offset="50%" stop-color="var(--peach)"/>
+            <stop offset="100%" stop-color="var(--lime)"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="brand-name">PULSE</span>
+    </div>
+    <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">Log in or create an account to continue.</p>
+
+    <label class="field">Email
+      <input type="email" id="authEmail" autocomplete="email" placeholder="you@example.com">
+    </label>
+    <label class="field" style="margin-top:12px;">Password
+      <input type="password" id="authPassword" autocomplete="current-password" placeholder="At least 6 characters">
+    </label>
+
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button id="authLogInBtn" class="btn btn-primary" type="button" style="flex:1;">Log In</button>
+      <button id="authSignUpBtn" class="btn btn-secondary" type="button" style="flex:1;">Sign Up</button>
+    </div>
+    <p id="authStatus" class="status-line" style="margin-top:12px;"></p>
+  </div>
+</div>
+
+<div class="app-container" id="appRoot">
 
   <aside class="sidebar">
     <div class="brand">
@@ -49,6 +83,11 @@
     <button class="nav-tab" data-tab="admin" type="button">⚙️ Admin</button>
 
     <button id="themeToggle" class="theme-toggle" type="button" title="Quick toggle for the default Peach & Pink look — for other themes, use Admin">🌙 Default: Dark</button>
+
+    <div class="auth-user-row">
+      <span id="loggedInEmail" class="auth-user-email"></span>
+      <button id="logoutBtn" class="theme-toggle" type="button">🚪 Log out</button>
+    </div>
   </aside>
 
   <main class="main-content">
@@ -710,6 +749,9 @@
   </main>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="auth.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
