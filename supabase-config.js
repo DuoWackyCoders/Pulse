@@ -6,5 +6,5 @@
    Fill them in with the values from your Supabase
    project's Settings -> API page.
    ============================================ */
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_PUBLIC_KEY';
+const SUPABASE_URL = 'https://givexkavssvmdmezekwe.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_zyRJZUk7vtdwc273vAwLxA__NPf1Ncp';
