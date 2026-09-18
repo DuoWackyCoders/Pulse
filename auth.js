@@ -54,7 +54,15 @@ async function handleSignUp() {
   const password = document.getElementById('authPassword').value;
   if (!email || !password) { setAuthStatus('Enter an email and password first.', 'error'); return; }
   setAuthStatus('Creating your account...', '');
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  // Explicitly tell Supabase where the confirmation link should send them
+  // back to, rather than relying on the project's Site URL setting alone —
+  // that setting still needs to allow this URL (Authentication -> URL
+  // Configuration), but this avoids depending on it defaulting correctly.
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname }
+  });
   if (error) { setAuthStatus(error.message, 'error'); return; }
   if (data.session) {
     // Email confirmation is off — signUp already logs them in, onAuthStateChange takes it from here.
