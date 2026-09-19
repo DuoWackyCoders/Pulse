@@ -16,9 +16,18 @@ let activeGroupFilter = '';
 /* ============================================
    THEME
    ============================================ */
+// Only ever changes what's on screen — never saves. Called both for a real
+// theme change AND to (re-)display an already-known value (initial page
+// load with the placeholder default, or applyLoadedUserSettings() applying
+// the real saved one) — saving on every one of those calls previously meant
+// the very first "show the default" call, if it happened to run while an
+// existing login session was already valid (e.g. on a page refresh, before
+// the real settings had been fetched yet), would overwrite the real saved
+// theme in Supabase with that placeholder default. Only actual user picks
+// should persist, so saving now happens at the two 'change' listeners below
+// instead of in here.
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  saveUserSettings({ theme });
   const headerSel = document.getElementById('themeToggle');
   if (headerSel) headerSel.value = theme;
   const adminSel = document.getElementById('themeSelect');
@@ -27,7 +36,9 @@ function applyTheme(theme) {
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') || 'light';
-  applyTheme(current === 'dark' ? 'light' : 'dark');
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  saveUserSettings({ theme: next });
 }
 
 // Called from data.js once this person's real settings come back from
@@ -2328,7 +2339,7 @@ window.deleteAdminAddress = function (id) {
 };
 
 function wireAdminTab() {
-  document.getElementById('themeSelect').addEventListener('change', (e) => applyTheme(e.target.value));
+  document.getElementById('themeSelect').addEventListener('change', (e) => { applyTheme(e.target.value); saveUserSettings({ theme: e.target.value }); });
   document.getElementById('adminSaveInfoBtn').addEventListener('click', () => {
     saveUserSettings({
       practitioner_name: document.getElementById('adminPractitionerName').value.trim(),
@@ -5208,7 +5219,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(userSettings.theme);
     const headerThemeSel = document.getElementById('themeToggle');
     if (headerThemeSel) {
-      headerThemeSel.addEventListener('change', (e) => applyTheme(e.target.value));
+      headerThemeSel.addEventListener('change', (e) => { applyTheme(e.target.value); saveUserSettings({ theme: e.target.value }); });
     }
   });
 
