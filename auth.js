@@ -13,6 +13,10 @@ function showApp(session) {
   document.getElementById('appRoot').style.display = 'flex';
   const emailLabel = document.getElementById('loggedInEmail');
   if (emailLabel) emailLabel.textContent = session.user.email;
+  // Fire-and-forget: the app is already visible with default settings
+  // (light theme, group size 20, etc.); this quietly swaps in the
+  // person's real saved settings once it comes back from Supabase.
+  if (typeof initUserSettings === 'function') initUserSettings();
 }
 
 function showAuthScreen() {
