@@ -76,13 +76,25 @@ async function checkOrgSetup(session) {
   }
 }
 
+// "Just me" fills in a reasonable personal default (from the email they
+// signed up with) rather than making a solo user think up a company name.
+// They can still edit it before hitting Continue.
+async function handleJustMeFill() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+  const namePart = session.user.email.split('@')[0];
+  const guess = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  document.getElementById('orgNameInput').value = guess;
+  document.getElementById('orgNameInput').focus();
+}
+
 async function handleCreateOrg() {
   const name = document.getElementById('orgNameInput').value.trim();
-  if (!name) { setAuthStatus('Enter a company name first.', 'error'); return; }
+  if (!name) { setAuthStatus('Enter a name first — a company name, or just your own.', 'error'); return; }
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) { setAuthStatus('Your session expired — please log in again.', 'error'); showAuthScreen(); return; }
 
-  setAuthStatus('Setting up your company...', '');
+  setAuthStatus('Setting this up...', '');
   const { data: org, error: orgError } = await supabaseClient
     .from('organizations')
     .insert({ name, created_by: session.user.id })
@@ -180,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sendResetEmailBtn').addEventListener('click', handleSendResetEmail);
   document.getElementById('setNewPasswordBtn').addEventListener('click', handleSetNewPassword);
   document.getElementById('createOrgBtn').addEventListener('click', handleCreateOrg);
+  document.getElementById('orgSetupJustMeBtn').addEventListener('click', handleJustMeFill);
   document.getElementById('orgSetupLogoutBtn').addEventListener('click', handleLogOut);
 
   // Fires once immediately with whatever session already exists (or none),

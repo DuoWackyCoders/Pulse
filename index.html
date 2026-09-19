@@ -70,11 +70,12 @@
     </div>
 
     <div id="authOrgSetupView" style="display:none;">
-      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">One more thing — what's your company called? This is your own private space; only people you invite later will ever see it.</p>
-      <label class="field">Company name
-        <input type="text" id="orgNameInput" placeholder="e.g. Maintenance Services Inc, or just your name">
+      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;">One more thing — what should we call this space? A company name if you're setting this up for a team, or just your own name if it's only you. Private either way — only people you invite later will ever see it.</p>
+      <label class="field">Name
+        <input type="text" id="orgNameInput" placeholder="e.g. Maintenance Services Inc, or just 'Sam'">
       </label>
-      <div style="display:flex; gap:10px; margin-top:18px;">
+      <button id="orgSetupJustMeBtn" type="button" class="auth-link-btn" style="margin-top:4px; margin-bottom:0;">Just me — fill this in for me</button>
+      <div style="display:flex; gap:10px; margin-top:14px;">
         <button id="createOrgBtn" class="btn btn-primary" type="button" style="flex:1;">Continue</button>
       </div>
       <button id="orgSetupLogoutBtn" type="button" class="auth-link-btn">Log out</button>
