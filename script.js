@@ -2,30 +2,23 @@
    STORAGE KEYS
    ============================================ */
 const STORAGE_KEY = 'patientRouter.patients.v1';
-const GROUP_SIZE_KEY = 'patientRouter.groupSizeMax.v1';
-const THEME_KEY = 'patientRouter.theme.v1';
 const PROVIDER_FILTER_KEY = 'patientRouter.providerFilter.v1';
 const SCHEDULES_KEY = 'patientRouter.schedules.v1'; // { 'YYYY-MM-DD': [{id,name,group,provider,arrivalMinutes}, ...] }
-const HOME_ADDR_KEY = 'patientRouter.homeAddress.v1'; // id referencing a saved start address — used for SCHEDULING only, not grouping
 
 /* ============================================
    STATE
    ============================================ */
 let patients = loadPatients();     // array of patient objects
-let groupSizeMax = loadGroupSizeMax(); // max patients per auto-formed group
+let groupSizeMax = DEFAULT_USER_SETTINGS.group_size_max; // max patients per auto-formed group — swapped for the real saved value once login completes
 let activeProviderFilter = localStorage.getItem(PROVIDER_FILTER_KEY) || '';
 let activeGroupFilter = '';
 
 /* ============================================
    THEME
    ============================================ */
-function loadTheme() {
-  return localStorage.getItem(THEME_KEY) || 'light';
-}
-
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem(THEME_KEY, theme);
+  saveUserSettings({ theme });
   const headerSel = document.getElementById('themeToggle');
   if (headerSel) headerSel.value = theme;
   const adminSel = document.getElementById('themeSelect');
@@ -35,6 +28,31 @@ function applyTheme(theme) {
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') || 'light';
   applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+// Called from data.js once this person's real settings come back from
+// Supabase. Everything above already rendered using DEFAULT_USER_SETTINGS
+// the moment the page loaded (so there's no blank/broken flash before
+// login resolves) — this just swaps those placeholder values for the real
+// ones and refreshes whatever's currently on screen to match.
+function applyLoadedUserSettings() {
+  groupSizeMax = userSettings.group_size_max;
+  standardWorkDays = userSettings.standard_work_days;
+  extraColumns = userSettings.extra_columns;
+
+  applyTheme(userSettings.theme);
+
+  const groupSizeSlider = document.getElementById('groupSizeSlider');
+  const groupSizeValue = document.getElementById('groupSizeValue');
+  if (groupSizeSlider) {
+    groupSizeSlider.value = groupSizeMax;
+    groupSizeValue.textContent = groupSizeMax;
+  }
+
+  syncWorkDayCheckboxesUI();
+
+  const adminTab = document.getElementById('tab-admin');
+  if (adminTab && adminTab.style.display !== 'none') populateAdminTab();
 }
 
 /* ============================================
@@ -59,12 +77,8 @@ function savePatients() {
     return false;
   }
 }
-function loadGroupSizeMax() {
-  const raw = localStorage.getItem(GROUP_SIZE_KEY);
-  return raw ? parseInt(raw, 10) : 20;
-}
 function saveGroupSizeMax() {
-  localStorage.setItem(GROUP_SIZE_KEY, String(groupSizeMax));
+  saveUserSettings({ group_size_max: groupSizeMax });
 }
 
 /* ============================================
@@ -120,15 +134,9 @@ function parseCSV(text) {
 
 // Tracks every "extra" (not specially-handled) column label seen so far,
 // in original CSV casing, so the table/export can render them consistently.
-let extraColumns = loadExtraColumns();
-function loadExtraColumns() {
-  try {
-    const raw = localStorage.getItem('patientRouter.extraColumns.v1');
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) { return []; }
-}
+let extraColumns = [...DEFAULT_USER_SETTINGS.extra_columns]; // swapped for the real saved value once login completes
 function saveExtraColumns() {
-  localStorage.setItem('patientRouter.extraColumns.v1', JSON.stringify(extraColumns));
+  saveUserSettings({ extra_columns: extraColumns });
 }
 
 /**
@@ -484,7 +492,7 @@ function regroup() {
 }
 
 function getHomeCoords() {
-  const homeId = localStorage.getItem(HOME_ADDR_KEY);
+  const homeId = userSettings.home_address_id;
   if (!homeId) return null;
   const saved = loadStartAddresses().find(a => a.id === homeId);
   return saved ? { lat: saved.lat, lng: saved.lng } : null;
@@ -494,7 +502,7 @@ function populateHomeAddressSelect() {
   const sel = document.getElementById('homeAddressSelect');
   if (!sel) return;
   const saved = loadStartAddresses();
-  const current = localStorage.getItem(HOME_ADDR_KEY) || '';
+  const current = userSettings.home_address_id || '';
   sel.innerHTML = '<option value="">No home set — using upload order</option>' +
     saved.map(a => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.address)}</option>`).join('');
   if (saved.some(a => a.id === current)) sel.value = current;
@@ -1704,19 +1712,11 @@ async function trimStopsToReturnTime(startCoords, orderedPatients, startTimeStr,
    WEEKLY SCHEDULING MODE
    ============================================ */
 const WEEK_DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-const STANDARD_WORK_DAYS_KEY = 'patientRouter.standardWorkDays.v1'; // array of 5 booleans, Mon..Fri
 
-function loadStandardWorkDays() {
-  try {
-    const raw = localStorage.getItem(STANDARD_WORK_DAYS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) { /* fall through to default */ }
-  return [true, true, true, true, true]; // default: every weekday is a standard work day until they say otherwise
-}
 function saveStandardWorkDays(arr) {
-  localStorage.setItem(STANDARD_WORK_DAYS_KEY, JSON.stringify(arr));
+  saveUserSettings({ standard_work_days: arr });
 }
-let standardWorkDays = loadStandardWorkDays();
+let standardWorkDays = [...DEFAULT_USER_SETTINGS.standard_work_days]; // swapped for the real saved value once login completes
 let weekResults = []; // populated after Generate Week — array of {date, dayLabel, group, stopCount, stops, error, totalHours, usingRealRoads}
 let weekStartCoordsGlobal = null;
 
@@ -2297,20 +2297,10 @@ function cancelWeek() {
 /* ============================================
    ADMIN TAB
    ============================================ */
-const PRACTITIONER_INFO_KEY = 'patientRouter.practitionerInfo.v1';
-
-function loadPractitionerInfo() {
-  try {
-    const raw = localStorage.getItem(PRACTITIONER_INFO_KEY);
-    return raw ? JSON.parse(raw) : { name: '', phone: '', email: '' };
-  } catch (e) { return { name: '', phone: '', email: '' }; }
-}
-
 function populateAdminTab() {
-  const info = loadPractitionerInfo();
-  document.getElementById('adminPractitionerName').value = info.name || '';
-  document.getElementById('adminPractitionerPhone').value = info.phone || '';
-  document.getElementById('adminPractitionerEmail').value = info.email || '';
+  document.getElementById('adminPractitionerName').value = userSettings.practitioner_name || '';
+  document.getElementById('adminPractitionerPhone').value = userSettings.practitioner_phone || '';
+  document.getElementById('adminPractitionerEmail').value = userSettings.practitioner_email || '';
 
   const sel = document.getElementById('themeSelect');
   if (sel) sel.value = document.documentElement.getAttribute('data-theme') || 'light';
@@ -2340,12 +2330,11 @@ window.deleteAdminAddress = function (id) {
 function wireAdminTab() {
   document.getElementById('themeSelect').addEventListener('change', (e) => applyTheme(e.target.value));
   document.getElementById('adminSaveInfoBtn').addEventListener('click', () => {
-    const info = {
-      name: document.getElementById('adminPractitionerName').value.trim(),
-      phone: document.getElementById('adminPractitionerPhone').value.trim(),
-      email: document.getElementById('adminPractitionerEmail').value.trim()
-    };
-    localStorage.setItem(PRACTITIONER_INFO_KEY, JSON.stringify(info));
+    saveUserSettings({
+      practitioner_name: document.getElementById('adminPractitionerName').value.trim(),
+      practitioner_phone: document.getElementById('adminPractitionerPhone').value.trim(),
+      practitioner_email: document.getElementById('adminPractitionerEmail').value.trim()
+    });
     const status = document.getElementById('adminInfoStatus');
     status.textContent = 'Saved.';
     status.className = 'status-line success';
@@ -5216,7 +5205,7 @@ document.addEventListener('DOMContentLoaded', () => {
    
 
    safeInit('theme', () => {
-    applyTheme(loadTheme());
+    applyTheme(userSettings.theme);
     const headerThemeSel = document.getElementById('themeToggle');
     if (headerThemeSel) {
       headerThemeSel.addEventListener('change', (e) => applyTheme(e.target.value));
