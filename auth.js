@@ -21,25 +21,95 @@ function showAuthScreen() {
   showLoginView();
 }
 
-function showLoginView() {
-  document.getElementById('authLoginView').style.display = 'block';
+function hideAllAuthViews() {
+  document.getElementById('authLoginView').style.display = 'none';
   document.getElementById('authResetView').style.display = 'none';
   document.getElementById('authNewPasswordView').style.display = 'none';
+  document.getElementById('authOrgSetupView').style.display = 'none';
   setAuthStatus('', '');
+}
+
+function showLoginView() {
+  hideAllAuthViews();
+  document.getElementById('authLoginView').style.display = 'block';
 }
 
 function showResetView() {
-  document.getElementById('authLoginView').style.display = 'none';
+  hideAllAuthViews();
   document.getElementById('authResetView').style.display = 'block';
-  document.getElementById('authNewPasswordView').style.display = 'none';
-  setAuthStatus('', '');
 }
 
 function showNewPasswordView() {
-  document.getElementById('authLoginView').style.display = 'none';
-  document.getElementById('authResetView').style.display = 'none';
+  hideAllAuthViews();
   document.getElementById('authNewPasswordView').style.display = 'block';
-  setAuthStatus('', '');
+}
+
+function showOrgSetupView() {
+  hideAllAuthViews();
+  document.getElementById('authOrgSetupView').style.display = 'block';
+}
+
+// Every login lands here first instead of going straight to showApp(). This
+// checks whether the person already belongs to a company (a row in
+// memberships) — if not, they get the one-time "name your company" screen
+// before ever seeing the app. window.currentOrgId/currentOrgRole are left
+// here for the rest of the app (script.js) to read once we wire up the
+// actual data tables to it.
+async function checkOrgSetup(session) {
+  const { data: memberships, error } = await supabaseClient
+    .from('memberships')
+    .select('org_id, role')
+    .eq('user_id', session.user.id)
+    .limit(1);
+
+  if (error) {
+    setAuthStatus('Could not check your account setup: ' + error.message, 'error');
+    return;
+  }
+
+  if (memberships && memberships.length > 0) {
+    window.currentOrgId = memberships[0].org_id;
+    window.currentOrgRole = memberships[0].role;
+    showApp(session);
+  } else {
+    showOrgSetupView();
+  }
+}
+
+// "Just me" fills in a reasonable personal default (from the email they
+// signed up with) rather than making a solo user think up a company name.
+// They can still edit it before hitting Continue.
+async function handleJustMeFill() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+  const namePart = session.user.email.split('@')[0];
+  const guess = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  document.getElementById('orgNameInput').value = guess;
+  document.getElementById('orgNameInput').focus();
+}
+
+async function handleCreateOrg() {
+  const name = document.getElementById('orgNameInput').value.trim();
+  if (!name) { setAuthStatus('Enter a name first — a company name, or just your own.', 'error'); return; }
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) { setAuthStatus('Your session expired — please log in again.', 'error'); showAuthScreen(); return; }
+
+  setAuthStatus('Setting this up...', '');
+  const { data: org, error: orgError } = await supabaseClient
+    .from('organizations')
+    .insert({ name, created_by: session.user.id })
+    .select()
+    .single();
+  if (orgError) { setAuthStatus(orgError.message, 'error'); return; }
+
+  const { error: memberError } = await supabaseClient
+    .from('memberships')
+    .insert({ org_id: org.id, user_id: session.user.id, role: 'admin' });
+  if (memberError) { setAuthStatus(memberError.message, 'error'); return; }
+
+  window.currentOrgId = org.id;
+  window.currentOrgRole = 'admin';
+  showApp(session);
 }
 
 function setAuthStatus(msg, kind) {
@@ -121,15 +191,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('backToLoginBtn').addEventListener('click', showLoginView);
   document.getElementById('sendResetEmailBtn').addEventListener('click', handleSendResetEmail);
   document.getElementById('setNewPasswordBtn').addEventListener('click', handleSetNewPassword);
+  document.getElementById('createOrgBtn').addEventListener('click', handleCreateOrg);
+  document.getElementById('orgSetupJustMeBtn').addEventListener('click', handleJustMeFill);
+  document.getElementById('orgSetupLogoutBtn').addEventListener('click', handleLogOut);
 
   // Fires once immediately with whatever session already exists (or none),
   // then again on every future login/logout — this single listener is what
   // decides which screen is showing at all times. A password-reset link
   // lands here as its own event, distinct from a normal login, so it gets
   // routed to the "set a new password" view instead of straight into the app.
+  // Every other successful session goes through checkOrgSetup first, since
+  // showApp() itself is never called directly here anymore.
   supabaseClient.auth.onAuthStateChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') { showNewPasswordView(); return; }
-    if (session) showApp(session);
+    if (session) checkOrgSetup(session);
     else showAuthScreen();
   });
 });
