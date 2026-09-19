@@ -37,6 +37,7 @@ async function initUserSettings() {
 
   if (error) {
     console.error('Failed to load user settings', error);
+    alert('Could not load your saved settings: ' + error.message);
     return;
   }
 
@@ -56,7 +57,10 @@ async function initUserSettings() {
     const { error: insertError } = await supabaseClient
       .from('user_settings')
       .insert({ user_id: session.user.id });
-    if (insertError) console.error('Failed to create default settings row', insertError);
+    if (insertError) {
+      console.error('Failed to create default settings row', insertError);
+      alert('Could not set up your saved settings: ' + insertError.message);
+    }
     userSettings = { ...DEFAULT_USER_SETTINGS };
   }
 
@@ -74,5 +78,8 @@ async function saveUserSettings(patch) {
     .from('user_settings')
     .update(patch)
     .eq('user_id', session.user.id);
-  if (error) console.error('Failed to save settings', error);
+  if (error) {
+    console.error('Failed to save settings', error);
+    alert('Could not save that change: ' + error.message);
+  }
 }
