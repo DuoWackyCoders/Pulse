@@ -22,18 +22,16 @@ let activeGroupFilter = '';
 function loadTheme() {
   return localStorage.getItem(THEME_KEY) || 'light';
 }
+
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem(THEME_KEY, theme);
-  const btn = document.getElementById('themeToggle');
-  if (btn) {
-    if (theme === 'dark') btn.textContent = '☀️ Default: Light';
-    else if (theme === 'light') btn.textContent = '🌙 Default: Dark';
-    else btn.textContent = '↺ Back to Default';
-  }
-  const sel = document.getElementById('themeSelect');
-  if (sel) sel.value = theme;
+  const headerSel = document.getElementById('themeToggle');
+  if (headerSel) headerSel.value = theme;
+  const adminSel = document.getElementById('themeSelect');
+  if (adminSel) adminSel.value = theme;
 }
+
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') || 'light';
   applyTheme(current === 'dark' ? 'light' : 'dark');
@@ -5215,9 +5213,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const safeInit = (label, fn) => {
     try { fn(); } catch (e) { console.error(`PULSE init step failed: ${label}`, e); }
   };
+   
 
-  safeInit('theme', () => {
+   safeInit('theme', () => {
     applyTheme(loadTheme());
+    const headerThemeSel = document.getElementById('themeToggle');
+    if (headerThemeSel) {
+      headerThemeSel.addEventListener('change', (e) => applyTheme(e.target.value));
+    }
   });
 
   safeInit('nav tabs', () => {
