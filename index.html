@@ -107,8 +107,20 @@
 
     <button class="nav-tab" data-tab="admin" type="button">⚙️ Admin</button>
 
-    <button id="themeToggle" class="theme-toggle" type="button" title="Quick toggle for the default Peach & Pink look — for other themes, use Admin">🌙 Default: Dark</button>
-
+    <select id="themeToggle" class="theme-toggle" title="Choose a theme — also editable in Admin">
+      <option value="light">☀️ Peach &amp; Pink (Light)</option>
+      <option value="dark">🌙 BlackPink (Dark)</option>
+      <option value="corporate">💼 Corporate Blue</option>
+      <option value="military">🎖️ Military Tactical</option>
+      <option value="mecha">🤖 Mecha Blue</option>
+      <option value="bitcoin">₿ Bitcoin Gold</option>
+      <option value="dracula">🧛 Dracula</option>
+      <option value="nord">❄️ Nord</option>
+      <option value="solarized">🌊 Solarized</option>
+      <option value="gruvbox">🍂 Gruvbox</option>
+      <option value="dungeon">😈 Diablo</option>
+    </select>
+    
     <div class="auth-user-row">
       <span id="loggedInEmail" class="auth-user-email"></span>
       <button id="logoutBtn" class="theme-toggle" type="button">🚪 Log out</button>
