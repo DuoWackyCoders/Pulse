@@ -95,19 +95,13 @@ async function handleCreateOrg() {
   if (!session) { setAuthStatus('Your session expired — please log in again.', 'error'); showAuthScreen(); return; }
 
   setAuthStatus('Setting this up...', '');
-  const { data: org, error: orgError } = await supabaseClient
-    .from('organizations')
-    .insert({ name, created_by: session.user.id })
-    .select()
-    .single();
-  if (orgError) { setAuthStatus(orgError.message, 'error'); return; }
+  // create_organization does both inserts (the company, then your admin
+  // membership) as one atomic database action — see
+  // sql/002_create_organization_function.sql for why that matters.
+  const { data: newOrgId, error } = await supabaseClient.rpc('create_organization', { org_name: name });
+  if (error) { setAuthStatus(error.message, 'error'); return; }
 
-  const { error: memberError } = await supabaseClient
-    .from('memberships')
-    .insert({ org_id: org.id, user_id: session.user.id, role: 'admin' });
-  if (memberError) { setAuthStatus(memberError.message, 'error'); return; }
-
-  window.currentOrgId = org.id;
+  window.currentOrgId = newOrgId;
   window.currentOrgRole = 'admin';
   showApp(session);
 }
