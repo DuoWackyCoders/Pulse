@@ -87,3 +87,56 @@ async function saveUserSettings(patch) {
     .eq('user_id', session.user.id);
   if (error) console.error('Failed to save settings', error);
 }
+
+/* ============================================
+   START ADDRESSES (Supabase-backed)
+   Saved home-base / office addresses a person picks from when building a
+   route. script.js keeps calling loadStartAddresses()/addStartAddress()/
+   deleteStartAddress() exactly as before — those now read/write the
+   in-memory `startAddresses` array below (kept in sync with Supabase)
+   instead of localStorage, so none of their many call sites needed to
+   change into async code themselves.
+   ============================================ */
+let startAddresses = [];
+
+async function initStartAddresses() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+
+  const { data, error } = await supabaseClient
+    .from('start_addresses')
+    .select('*')
+    .eq('user_id', session.user.id)
+    .order('created_at', { ascending: true });
+
+  if (error) { console.error('Failed to load start addresses', error); return; }
+
+  startAddresses = data || [];
+  if (typeof applyLoadedStartAddresses === 'function') applyLoadedStartAddresses();
+}
+
+// Inserts one address into Supabase and returns the saved row (with its
+// real id), or null if it failed. Does not touch the in-memory array —
+// script.js's addStartAddress() does that itself once this resolves.
+async function insertStartAddress(entry) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return null;
+  const { data, error } = await supabaseClient
+    .from('start_addresses')
+    .insert({ user_id: session.user.id, label: entry.label, address: entry.address, lat: entry.lat, lng: entry.lng })
+    .select()
+    .single();
+  if (error) { console.error('Failed to save address', error); return null; }
+  return data;
+}
+
+async function removeStartAddress(id) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+  const { error } = await supabaseClient
+    .from('start_addresses')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', session.user.id);
+  if (error) console.error('Failed to delete address', error);
+}
