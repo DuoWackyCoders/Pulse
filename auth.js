@@ -18,6 +18,7 @@ function showApp(session) {
   // person's real saved settings once it comes back from Supabase.
   if (typeof initUserSettings === 'function') initUserSettings();
   if (typeof initStartAddresses === 'function') initStartAddresses();
+  if (typeof initPatients === 'function') initPatients();
 }
 
 function showAuthScreen() {
