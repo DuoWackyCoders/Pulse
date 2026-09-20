@@ -1340,21 +1340,29 @@ window.addPatientToLeftover = function (patientId) {
    ROUTE BUILDER (Schedule tab)
    ============================================ */
 const AVG_MPH = 25; // straight-line estimate assumption for suburban driving
-const START_ADDR_KEY = 'patientRouter.startAddresses.v1';
 let startCoords = null;
 let scheduledPatients = [];
 let leftoverPatients = [];
 let draggedId = null;
 let draggedFrom = null;
 
+// Returns the in-memory cache from data.js — kept in sync with Supabase by
+// initStartAddresses()/addStartAddress()/deleteStartAddress() below. Same
+// name/signature as before so its ~15 call sites throughout Daily/Weekly/
+// Monthly/Admin didn't need to change.
 function loadStartAddresses() {
-  try {
-    const raw = localStorage.getItem(START_ADDR_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) { return []; }
+  return startAddresses;
 }
-function saveStartAddresses(list) {
-  localStorage.setItem(START_ADDR_KEY, JSON.stringify(list));
+
+// Called from data.js once addresses come back from Supabase after login.
+// Refreshes every address dropdown/list that might already be on screen.
+function applyLoadedStartAddresses() {
+  populateStartAddressSelect();
+  populateWeekStartAddressSelect();
+  populateMonthStartAddressSelect();
+  populateHomeAddressSelect();
+  const adminTab = document.getElementById('tab-admin');
+  if (adminTab && adminTab.style.display !== 'none') renderAdminAddressList();
 }
 
 function populateStartAddressSelect() {
@@ -1381,10 +1389,9 @@ async function addStartAddress(label, address, statusEl) {
   try {
     const coords = await geocodeAddress(address);
     if (!coords) { if (statusEl) { statusEl.textContent = 'Could not find that address.'; statusEl.className = 'status-line error'; } return null; }
-    const saved = loadStartAddresses();
-    const entry = { id: 'a_' + Date.now(), label: label || 'Location', address, lat: coords.lat, lng: coords.lng };
-    saved.push(entry);
-    saveStartAddresses(saved);
+    const entry = await insertStartAddress({ label: label || 'Location', address, lat: coords.lat, lng: coords.lng });
+    if (!entry) { if (statusEl) { statusEl.textContent = 'Could not save that address — try again.'; statusEl.className = 'status-line error'; } return null; }
+    startAddresses.push(entry);
     populateStartAddressSelect();
     if (statusEl) { statusEl.textContent = 'Address saved.'; statusEl.className = 'status-line success'; }
     return entry;
@@ -1394,9 +1401,9 @@ async function addStartAddress(label, address, statusEl) {
   }
 }
 
-function deleteStartAddress(id) {
-  const saved = loadStartAddresses().filter(a => a.id !== id);
-  saveStartAddresses(saved);
+async function deleteStartAddress(id) {
+  await removeStartAddress(id);
+  startAddresses = startAddresses.filter(a => a.id !== id);
   populateStartAddressSelect();
 }
 
@@ -2336,9 +2343,9 @@ function renderAdminAddressList() {
       `).join('');
 }
 
-window.deleteAdminAddress = function (id) {
+window.deleteAdminAddress = async function (id) {
   if (!confirm('Remove this starting address?')) return;
-  deleteStartAddress(id);
+  await deleteStartAddress(id);
   renderAdminAddressList();
 };
 

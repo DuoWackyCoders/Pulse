@@ -17,6 +17,7 @@ function showApp(session) {
   // (light theme, group size 20, etc.); this quietly swaps in the
   // person's real saved settings once it comes back from Supabase.
   if (typeof initUserSettings === 'function') initUserSettings();
+  if (typeof initStartAddresses === 'function') initStartAddresses();
 }
 
 function showAuthScreen() {
