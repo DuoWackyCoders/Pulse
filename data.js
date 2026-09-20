@@ -19,7 +19,18 @@ const DEFAULT_USER_SETTINGS = {
   practitioner_email: ''
 };
 
-let userSettings = { ...DEFAULT_USER_SETTINGS };
+// Seeds the starting theme from the same local anti-flash cache the inline
+// <head> script already applied to the page before any of this ran — so
+// script.js's own initial "apply the default" call re-applies the SAME
+// value instead of stomping it back to the hardcoded default (which is
+// exactly what caused a visible flash back to light, especially on the
+// login screen where no login ever happens to correct it afterward).
+function getCachedTheme() {
+  try { return localStorage.getItem('pulseLastTheme') || DEFAULT_USER_SETTINGS.theme; }
+  catch (e) { return DEFAULT_USER_SETTINGS.theme; }
+}
+
+let userSettings = { ...DEFAULT_USER_SETTINGS, theme: getCachedTheme() };
 
 // Called once, right after login (from auth.js's showApp). Fetches this
 // person's settings row, or creates one with defaults if this is their

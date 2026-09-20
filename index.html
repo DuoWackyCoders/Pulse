@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PULSE</title>
+<script>
+  // Applies the last-shown theme on THIS browser immediately, before the
+  // page renders — avoids a flash of the default look while the real,
+  // authoritative value is fetched from Supabase moments later. Purely a
+  // local, best-effort cache for instant paint; never the source of truth
+  // for what a theme actually is, and never used to save anything.
+  (function () {
+    try {
+      var cached = localStorage.getItem('pulseLastTheme');
+      if (cached) document.documentElement.setAttribute('data-theme', cached);
+    } catch (e) {}
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">

@@ -28,6 +28,10 @@ let activeGroupFilter = '';
 // instead of in here.
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
+  // Keeps the anti-flash cache (see the inline script in index.html's
+  // <head>) matching whatever's actually on screen, so next time this
+  // browser loads the page it can guess right before Supabase responds.
+  try { localStorage.setItem('pulseLastTheme', theme); } catch (e) {}
   const headerSel = document.getElementById('themeToggle');
   if (headerSel) headerSel.value = theme;
   const adminSel = document.getElementById('themeSelect');
