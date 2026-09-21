@@ -19,6 +19,7 @@ function showApp(session) {
   if (typeof initUserSettings === 'function') initUserSettings();
   if (typeof initStartAddresses === 'function') initStartAddresses();
   if (typeof initPatients === 'function') initPatients();
+  if (typeof initSchedules === 'function') initSchedules();
 }
 
 function showAuthScreen() {
