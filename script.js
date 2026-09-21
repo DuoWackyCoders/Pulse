@@ -1,14 +1,14 @@
 /* ============================================
    STORAGE KEYS
    ============================================ */
-const STORAGE_KEY = 'patientRouter.patients.v1';
 const PROVIDER_FILTER_KEY = 'patientRouter.providerFilter.v1';
 const SCHEDULES_KEY = 'patientRouter.schedules.v1'; // { 'YYYY-MM-DD': [{id,name,group,provider,arrivalMinutes}, ...] }
 
 /* ============================================
    STATE
    ============================================ */
-let patients = loadPatients();     // array of patient objects
+let patients = []; // array of patient objects — populated by initPatients() once login completes
+let lastSyncedPatients = new Map(); // id -> JSON snapshot of the last-known-synced-to-Supabase version, used by savePatients() to figure out what actually changed
 let groupSizeMax = DEFAULT_USER_SETTINGS.group_size_max; // max patients per auto-formed group — swapped for the real saved value once login completes
 let activeProviderFilter = localStorage.getItem(PROVIDER_FILTER_KEY) || '';
 let activeGroupFilter = '';
@@ -73,22 +73,121 @@ function applyLoadedUserSettings() {
 /* ============================================
    PERSISTENCE
    ============================================ */
-function loadPatients() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error('Failed to load patients from storage', e);
-    return [];
-  }
+// Translates between the app's patient object shape (camelCase, matches
+// what the rest of script.js has always used) and the patients table's
+// column names (snake_case; "group" is reserved in SQL, hence group_label).
+function mapPatientToRow(p) {
+  return {
+    name: p.name || null,
+    address: p.address || null,
+    dob: p.dob || null,
+    coordinator: p.coordinator || null,
+    provider: p.provider || null,
+    last_visit_date: p.lastVisitDate || null,
+    lat: p.lat,
+    lng: p.lng,
+    group_label: p.group || null,
+    manual_group: !!p.manualGroup,
+    geocode_failed: !!p.geocodeFailed,
+    extra: p.extra || {}
+  };
 }
-function savePatients() {
+function mapRowToPatient(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    address: row.address || '',
+    dob: row.dob || '',
+    coordinator: row.coordinator || '',
+    provider: row.provider || '',
+    lastVisitDate: row.last_visit_date || '',
+    lat: row.lat,
+    lng: row.lng,
+    group: row.group_label,
+    manualGroup: !!row.manual_group,
+    geocodeFailed: !!row.geocode_failed,
+    extra: row.extra || {}
+  };
+}
+
+// Called once, right after login (from auth.js's showApp). patients starts
+// empty so the (still-hidden, gated) app has nothing broken to render
+// before login resolves; this fills it in and refreshes the UI once the
+// real list arrives.
+async function initPatients() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+
+  const { data, error } = await supabaseClient
+    .from('patients')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) { console.error('Failed to load patients', error); return; }
+
+  patients = (data || []).map(mapRowToPatient);
+  lastSyncedPatients = new Map(patients.map(p => [p.id, JSON.stringify(mapPatientToRow(p))]));
+
+  populateProviderFilter();
+  renderTable();
+  renderGroupSummary();
+  if (clientsMap) renderClientsMap();
+}
+
+// Diffs the in-memory `patients` array against the last-known-synced
+// snapshot and sends only what actually changed to Supabase — patients.id
+// stays a plain client-side string ('p_...') until the row is actually
+// inserted, at which point it's swapped for the real database id, exactly
+// like start_addresses' entries. Called from ~20 places throughout the
+// app after some mutation, same as the old localStorage version — kept
+// the same name and no-argument signature so none of those call sites
+// needed to change, only the couple that await its return value.
+async function savePatients() {
+  const currentIds = new Set(patients.map(p => p.id));
+  const deletedIds = [...lastSyncedPatients.keys()].filter(id => !currentIds.has(id));
+
+  const newPatients = [];
+  const changedPatients = [];
+  patients.forEach(p => {
+    const row = mapPatientToRow(p);
+    const currentJson = JSON.stringify(row);
+    const previousJson = lastSyncedPatients.get(p.id);
+    if (previousJson === undefined) newPatients.push({ p, row });
+    else if (previousJson !== currentJson) changedPatients.push({ p, row, currentJson });
+  });
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+    if (deletedIds.length > 0) {
+      const { error } = await supabaseClient.from('patients').delete().in('id', deletedIds);
+      if (error) console.error('Failed to delete patients', error);
+      else deletedIds.forEach(id => lastSyncedPatients.delete(id));
+    }
+
+    if (newPatients.length > 0) {
+      const rows = newPatients.map(({ row }) => ({ org_id: window.currentOrgId, ...row }));
+      const { data, error } = await supabaseClient.from('patients').insert(rows).select();
+      if (error) {
+        console.error('Failed to save new patients', error);
+      } else {
+        newPatients.forEach(({ p }, i) => {
+          const realRow = data && data[i];
+          if (!realRow) return;
+          p.id = realRow.id; // swap the temporary client-side id for the real one
+          lastSyncedPatients.set(realRow.id, JSON.stringify(mapPatientToRow(p)));
+        });
+      }
+    }
+
+    if (changedPatients.length > 0) {
+      const rows = changedPatients.map(({ p, row }) => ({ id: p.id, ...row }));
+      const { error } = await supabaseClient.from('patients').upsert(rows);
+      if (error) console.error('Failed to update patients', error);
+      else changedPatients.forEach(({ p, currentJson }) => lastSyncedPatients.set(p.id, currentJson));
+    }
     return true;
   } catch (e) {
-    console.error('Failed to save patients to storage', e);
-    setStatus('Could not save — your browser storage may be full.', 'error');
+    console.error('savePatients failed', e);
+    setStatus('Could not save — check your connection and try again.', 'error');
     return false;
   }
 }
@@ -1054,7 +1153,7 @@ async function submitManualAdd() {
   });
 
   patients = patients.concat(toAdd);
-  const saveOk = savePatients();
+  const saveOk = await savePatients();
   renderTable();
   renderGroupSummary();
   populateProviderFilter();
@@ -1062,7 +1161,7 @@ async function submitManualAdd() {
 
   const statusEl = document.getElementById('manualAddStatus');
   if (!saveOk) {
-    statusEl.textContent = 'Save failed — your browser storage may be full. The patient(s) may not persist after reload.';
+    statusEl.textContent = 'Save failed — check your connection. The patient(s) may not persist after reload.';
     statusEl.className = 'status-line error';
   } else {
     const hiddenReasons = checkHiddenByCurrentView(toAdd);
@@ -1100,13 +1199,13 @@ function handleFile(file, mode) {
       patients = patients.concat(toAdd);
       justAdded = toAdd;
     }
-    const saveOk = savePatients();
+    const saveOk = await savePatients();
     renderTable();
     renderGroupSummary();
     populateProviderFilter();
     const addedCount = parsed.length - skippedDupes;
     if (!saveOk) {
-      setStatus('Save failed — your browser storage may be full. This data may not persist after reload.', 'error');
+      setStatus('Save failed — check your connection. This data may not persist after reload.', 'error');
     } else {
       const hiddenReasons = checkHiddenByCurrentView(justAdded);
       const hiddenNote = hiddenReasons.length > 0 ? ' ⚠️ ' + hiddenReasons.join('; ') + '.' : '';
