@@ -2,13 +2,14 @@
    STORAGE KEYS
    ============================================ */
 const PROVIDER_FILTER_KEY = 'patientRouter.providerFilter.v1';
-const SCHEDULES_KEY = 'patientRouter.schedules.v1'; // { 'YYYY-MM-DD': [{id,name,group,provider,arrivalMinutes}, ...] }
 
 /* ============================================
    STATE
    ============================================ */
 let patients = []; // array of patient objects — populated by initPatients() once login completes
 let lastSyncedPatients = new Map(); // id -> JSON snapshot of the last-known-synced-to-Supabase version, used by savePatients() to figure out what actually changed
+let schedulesCache = {}; // { 'YYYY-MM-DD': [stops...] } — populated by initSchedules() once login completes
+let lastSyncedScheduleDays = new Map(); // 'YYYY-MM-DD' -> JSON snapshot of that day's last-known-synced stops array
 let groupSizeMax = DEFAULT_USER_SETTINGS.group_size_max; // max patients per auto-formed group — swapped for the real saved value once login completes
 let activeProviderFilter = localStorage.getItem(PROVIDER_FILTER_KEY) || '';
 let activeGroupFilter = '';
@@ -4567,14 +4568,84 @@ function wireEditModal() {
    ============================================ */
 let calendarViewDate = new Date();
 
+// Returns the in-memory cache — populated by initSchedules() after login,
+// kept in sync with Supabase by saveSchedules() below. Same name/signature
+// as before (fully synchronous) so its ~15 call sites throughout the
+// calendar, weekly/monthly approval, and cancel flows didn't need to change.
 function loadSchedules() {
-  try {
-    const raw = localStorage.getItem(SCHEDULES_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) { return {}; }
+  return schedulesCache;
 }
-function saveSchedules(obj) {
-  localStorage.setItem(SCHEDULES_KEY, JSON.stringify(obj));
+
+// Called once, right after login (from auth.js's showApp). schedulesCache
+// starts empty so the calendar has nothing broken to render before login
+// resolves; this fills it in and refreshes whatever's currently on screen.
+async function initSchedules() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+
+  const { data, error } = await supabaseClient
+    .from('schedule_days')
+    .select('*')
+    .order('visit_date', { ascending: true });
+
+  if (error) { console.error('Failed to load schedules', error); return; }
+
+  schedulesCache = {};
+  lastSyncedScheduleDays = new Map();
+  (data || []).forEach(row => {
+    schedulesCache[row.visit_date] = row.stops || [];
+    lastSyncedScheduleDays.set(row.visit_date, JSON.stringify(row.stops || []));
+  });
+
+  renderCalendar();
+}
+
+// Diffs the whole schedules object against what was last synced and sends
+// only the days that actually changed — one bulk upsert for added/edited
+// days, one bulk delete for removed ones (e.g. a cancelled day). Callers
+// keep calling this exactly as before (load the whole object, mutate it,
+// pass the whole thing back) — none of them needed to change, since
+// nothing here checks its return value.
+async function saveSchedules(obj) {
+  schedulesCache = obj;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+
+  const currentDates = Object.keys(obj).filter(d => obj[d] && obj[d].length > 0);
+  const currentDateSet = new Set(currentDates);
+  const deletedDates = [...lastSyncedScheduleDays.keys()].filter(d => !currentDateSet.has(d));
+
+  const toUpsert = [];
+  currentDates.forEach(date => {
+    const stops = obj[date];
+    const currentJson = JSON.stringify(stops);
+    if (lastSyncedScheduleDays.get(date) !== currentJson) toUpsert.push({ date, stops, currentJson });
+  });
+
+  try {
+    if (deletedDates.length > 0) {
+      const { error } = await supabaseClient
+        .from('schedule_days')
+        .delete()
+        .eq('assigned_to', session.user.id)
+        .in('visit_date', deletedDates);
+      if (error) console.error('Failed to delete schedule days', error);
+      else deletedDates.forEach(d => lastSyncedScheduleDays.delete(d));
+    }
+
+    if (toUpsert.length > 0) {
+      const rows = toUpsert.map(({ date, stops }) => ({
+        org_id: window.currentOrgId, assigned_to: session.user.id, visit_date: date, stops
+      }));
+      const { error } = await supabaseClient
+        .from('schedule_days')
+        .upsert(rows, { onConflict: 'org_id,assigned_to,visit_date' });
+      if (error) console.error('Failed to save schedule days', error);
+      else toUpsert.forEach(({ date, currentJson }) => lastSyncedScheduleDays.set(date, currentJson));
+    }
+  } catch (e) {
+    console.error('saveSchedules failed', e);
+  }
 }
 
 /**
