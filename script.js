@@ -143,7 +143,27 @@ async function initPatients() {
 // app after some mutation, same as the old localStorage version — kept
 // the same name and no-argument signature so none of those call sites
 // needed to change, only the couple that await its return value.
-async function savePatients() {
+// Several places call savePatients() twice in a row without waiting for the
+// first to finish (e.g. geocodeAllPending() saves once, then immediately
+// calls regroup(), which saves again) — each call diffs against the SAME
+// shared "what's already saved" snapshot, so if two overlapping calls were
+// allowed to run at once, whichever one's network request happened to
+// finish LAST would win, even if it started from older information —
+// silently overwriting a newer change (this is exactly what was
+// reverting group assignments after a refresh). Chaining every call onto
+// a shared queue forces them to run one at a time, in order, so a later
+// save always sees what the one before it just wrote.
+let patientsSaveQueue = Promise.resolve();
+function savePatients() {
+  // .catch() here (not inside doSavePatients) so an unexpected error can
+  // never leave every future call permanently stuck waiting on a rejected
+  // promise that never resolves.
+  const result = patientsSaveQueue.then(() => doSavePatients());
+  patientsSaveQueue = result.catch(() => {});
+  return result;
+}
+
+async function doSavePatients() {
   const currentIds = new Set(patients.map(p => p.id));
   const deletedIds = [...lastSyncedPatients.keys()].filter(id => !currentIds.has(id));
 
@@ -4606,8 +4626,22 @@ async function initSchedules() {
 // keep calling this exactly as before (load the whole object, mutate it,
 // pass the whole thing back) — none of them needed to change, since
 // nothing here checks its return value.
-async function saveSchedules(obj) {
+// Same overlapping-calls problem as savePatients() above (see its comment)
+// — several call sites save twice in a row without waiting for the first
+// to finish. schedulesCache is updated immediately, synchronously, so
+// loadSchedules() always reflects the latest state right away (every
+// caller mutates that same shared object directly before calling this);
+// only the Supabase sync itself is queued to run one at a time.
+let schedulesSaveQueue = Promise.resolve();
+function saveSchedules(obj) {
   schedulesCache = obj;
+  const result = schedulesSaveQueue.then(() => doSaveSchedules());
+  schedulesSaveQueue = result.catch(() => {});
+  return result;
+}
+
+async function doSaveSchedules() {
+  const obj = schedulesCache;
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) return;
 
