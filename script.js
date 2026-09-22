@@ -200,7 +200,16 @@ async function doSavePatients() {
     }
 
     if (changedPatients.length > 0) {
-      const rows = changedPatients.map(({ p, row }) => ({ id: p.id, ...row }));
+      // upsert() is an INSERT ... ON CONFLICT DO UPDATE under the hood, and
+      // Postgres enforces the INSERT policy's WITH CHECK (which needs
+      // org_id) for that attempted insert even when it ends up updating an
+      // existing row instead. Leaving org_id out made every one of these
+      // silently fail that check — this is why a patient's name/address
+      // (saved once, at creation, via the insert path below which does
+      // include org_id) persisted fine, but anything saved afterward
+      // (geocoded coordinates, group assignment) never actually reached
+      // the database no matter how many times it was "saved".
+      const rows = changedPatients.map(({ p, row }) => ({ id: p.id, org_id: window.currentOrgId, ...row }));
       const { error } = await supabaseClient.from('patients').upsert(rows);
       if (error) console.error('Failed to update patients', error);
       else changedPatients.forEach(({ p, currentJson }) => lastSyncedPatients.set(p.id, currentJson));

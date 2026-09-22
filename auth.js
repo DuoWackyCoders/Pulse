@@ -203,9 +203,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // routed to the "set a new password" view instead of straight into the app.
   // Every other successful session goes through checkOrgSetup first, since
   // showApp() itself is never called directly here anymore.
+  //
+  // Supabase also re-fires this with a still-valid session for the SAME
+  // person just from switching browser tabs/windows and coming back (it
+  // quietly re-checks the session on focus) — not just on an actual login.
+  // Without the guard below, every one of those silently re-ran
+  // checkOrgSetup -> showApp -> initPatients()/initSchedules()/etc., which
+  // re-fetches from the database and OVERWRITES whatever's currently on
+  // screen with what's already saved — wiping out a just-made change (like
+  // a group assignment) if its own save hadn't finished landing yet. Only
+  // react when the logged-in person actually changed (a real login/logout),
+  // not on a same-person re-confirmation.
+  let activeSessionUserId = null;
   supabaseClient.auth.onAuthStateChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') { showNewPasswordView(); return; }
-    if (session) checkOrgSetup(session);
-    else showAuthScreen();
+    if (session) {
+      if (session.user.id === activeSessionUserId) return;
+      activeSessionUserId = session.user.id;
+      checkOrgSetup(session);
+    } else {
+      activeSessionUserId = null;
+      showAuthScreen();
+    }
   });
 });
