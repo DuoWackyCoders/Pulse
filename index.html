@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922b">
+<link rel="stylesheet" href="style.css?v=20260922c">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -745,6 +745,25 @@
       </p>
     </section>
 
+    <section class="card">
+      <h2 class="card-title">What's new</h2>
+      <p class="card-subtitle">A running list of improvements made to PULSE.</p>
+      <div id="changelogList"><p class="status-line">Loading...</p></div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Found a bug? Have an idea?</h2>
+      <p class="card-subtitle">Tell us what's wrong or what would help — this goes straight to the person building PULSE, not anywhere public.</p>
+      <label class="field">What's going on?
+        <textarea id="feedbackMessage" rows="4" placeholder="Describe the bug or the improvement you'd like..." style="width:100%; font-family: var(--font-mono); font-size:0.85rem; padding:9px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text); resize:vertical;"></textarea>
+      </label>
+      <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+        <input type="file" id="feedbackPhoto" accept="image/*">
+        <button id="feedbackSubmitBtn" class="btn btn-primary" type="button">Send feedback</button>
+      </div>
+      <p id="feedbackStatus" class="status-line"></p>
+    </section>
+
   </div>
 
   <div id="tab-admin" class="tab-panel" style="display:none;">
@@ -806,15 +825,42 @@
       <p id="recalcLastVisitStatus" class="status-line"></p>
     </section>
 
+    <section class="card" id="adminFeedbackSection">
+      <h2 class="card-title">Feedback inbox</h2>
+      <p class="card-subtitle">Bug reports and suggestions submitted from the About tab.</p>
+      <div id="adminFeedbackList"></div>
+    </section>
+
+    <section class="card" id="adminChangelogSection">
+      <h2 class="card-title">Post a "What's new" update</h2>
+      <p class="card-subtitle">Shows up in everyone's About tab, newest first.</p>
+      <div class="schedule-grid">
+        <label class="field">Title
+          <input type="text" id="changelogNewTitle" placeholder="e.g. Faster route building">
+        </label>
+        <label class="field">Date
+          <input type="date" id="changelogNewDate">
+        </label>
+      </div>
+      <label class="field" style="margin-top:10px;">What changed
+        <textarea id="changelogNewDescription" rows="3" placeholder="What did this update do?" style="width:100%; font-family: var(--font-mono); font-size:0.85rem; padding:9px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text); resize:vertical;"></textarea>
+      </label>
+      <label class="field" style="margin-top:10px;">Picture or video link (optional)
+        <input type="text" id="changelogNewMedia" placeholder="https://...">
+      </label>
+      <button id="changelogPostBtn" class="btn btn-primary" type="button" style="margin-top:14px;">Post update</button>
+      <p id="changelogPostStatus" class="status-line"></p>
+    </section>
+
   </div>
 
   </main>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260922b"></script>
-<script src="auth.js?v=20260922b"></script>
-<script src="data.js?v=20260922b"></script>
-<script src="script.js?v=20260922b"></script>
+<script src="supabase-config.js?v=20260922c"></script>
+<script src="auth.js?v=20260922c"></script>
+<script src="data.js?v=20260922c"></script>
+<script src="script.js?v=20260922c"></script>
 </body>
 </html>

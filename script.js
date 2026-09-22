@@ -1023,6 +1023,16 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// escapeHtml alone isn't safe to drop inside an HTML attribute (it leaves
+// quote characters untouched) — needed anywhere a value someone other than
+// you typed (a feedback message, an uploaded file's name) ends up in a
+// data-* attribute or similar, so it can never break out of the attribute.
+function escapeAttr(str) {
+  return (str ?? '').toString()
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 /* ============================================
    UPLOAD HANDLING
    ============================================ */
@@ -2457,6 +2467,20 @@ function populateAdminTab() {
   if (sel) sel.value = document.documentElement.getAttribute('data-theme') || 'light';
 
   renderAdminAddressList();
+
+  // Feedback and changelog-posting are admin-only (the database itself
+  // already refuses a non-admin's read/write either way — this just keeps
+  // a provider from seeing an inbox that would show up empty for them).
+  const isAdmin = window.currentOrgRole === 'admin';
+  const feedbackSection = document.getElementById('adminFeedbackSection');
+  const changelogSection = document.getElementById('adminChangelogSection');
+  if (feedbackSection) feedbackSection.style.display = isAdmin ? '' : 'none';
+  if (changelogSection) changelogSection.style.display = isAdmin ? '' : 'none';
+  if (isAdmin) {
+    renderFeedbackInbox();
+    const dateEl = document.getElementById('changelogNewDate');
+    if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+  }
 }
 
 function renderAdminAddressList() {
@@ -2510,6 +2534,116 @@ function wireAdminTab() {
       ? `Done — corrected ${changed} patient(s) to match their actual schedule history.`
       : 'Done — everyone already matched their actual schedule history, nothing to fix.';
     status.className = 'status-line success';
+  });
+
+  // Delegated (rather than a fresh onclick per row) specifically because a
+  // feedback submitter's uploaded filename ends up in data-photo — routing
+  // clicks through dataset instead of an inline onclick string keeps that
+  // untrusted text from ever being interpreted as script.
+  document.getElementById('adminFeedbackList').addEventListener('click', async (e) => {
+    const resolveBtn = e.target.closest('.feedback-resolve-btn');
+    if (resolveBtn) {
+      await markFeedbackResolved(resolveBtn.dataset.id, resolveBtn.dataset.resolved === 'true');
+      renderFeedbackInbox();
+      return;
+    }
+    const photoBtn = e.target.closest('.feedback-photo-btn');
+    if (photoBtn) {
+      const url = await getFeedbackPhotoUrl(photoBtn.dataset.photo);
+      if (url) window.open(url, '_blank');
+      else alert('Could not load that photo.');
+    }
+  });
+
+  document.getElementById('changelogPostBtn').addEventListener('click', async () => {
+    const title = document.getElementById('changelogNewTitle').value.trim();
+    const description = document.getElementById('changelogNewDescription').value.trim();
+    const mediaUrl = document.getElementById('changelogNewMedia').value.trim();
+    const dateEl = document.getElementById('changelogNewDate');
+    const releasedAt = dateEl.value || new Date().toISOString().slice(0, 10);
+    const statusEl = document.getElementById('changelogPostStatus');
+    if (!title || !description) {
+      statusEl.textContent = 'Add a title and a short description first.';
+      statusEl.className = 'status-line error';
+      return;
+    }
+    statusEl.textContent = 'Posting...';
+    statusEl.className = 'status-line';
+    const result = await postChangelogEntry({ title, description, mediaUrl, releasedAt });
+    if (result.ok) {
+      document.getElementById('changelogNewTitle').value = '';
+      document.getElementById('changelogNewDescription').value = '';
+      document.getElementById('changelogNewMedia').value = '';
+      dateEl.value = '';
+      statusEl.textContent = 'Posted!';
+      statusEl.className = 'status-line success';
+    } else {
+      statusEl.textContent = 'Could not post: ' + result.error;
+      statusEl.className = 'status-line error';
+    }
+  });
+}
+
+function renderFeedbackInbox() {
+  const el = document.getElementById('adminFeedbackList');
+  if (!el) return;
+  if (feedbackEntries.length === 0) {
+    el.innerHTML = '<p class="status-line">No feedback yet.</p>';
+    return;
+  }
+  el.innerHTML = feedbackEntries.map(f => `
+    <div class="search-result-row" style="align-items:flex-start; flex-direction:column; gap:6px;">
+      <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
+        <strong style="${f.status === 'resolved' ? 'text-decoration:line-through; opacity:0.6;' : ''}">${escapeHtml(f.message)}</strong>
+        <button type="button" class="btn-tiny feedback-resolve-btn" data-id="${escapeAttr(f.id)}" data-resolved="${f.status !== 'resolved'}">${f.status === 'resolved' ? '↺ Reopen' : '✔ Mark resolved'}</button>
+      </div>
+      <span class="status-line">${new Date(f.created_at).toLocaleString()} — ${escapeHtml(f.status)}</span>
+      ${f.photo_url ? `<button type="button" class="btn-tiny feedback-photo-btn" data-photo="${escapeAttr(f.photo_url)}">📷 View photo</button>` : ''}
+    </div>
+  `).join('');
+}
+
+function renderChangelog() {
+  const el = document.getElementById('changelogList');
+  if (!el) return;
+  if (changelogEntries.length === 0) {
+    el.innerHTML = '<p class="status-line">Nothing posted yet — check back soon.</p>';
+    return;
+  }
+  el.innerHTML = changelogEntries.map(c => `
+    <div class="about-item" style="margin-bottom:14px;">
+      <h3>${escapeHtml(c.title)}</h3>
+      <p class="status-line" style="margin:2px 0 6px;">${new Date(c.released_at + 'T00:00:00').toLocaleDateString()}</p>
+      <p>${escapeHtml(c.description)}</p>
+      ${c.media_url ? `<a href="${escapeAttr(c.media_url)}" target="_blank" rel="noopener noreferrer">View picture/video →</a>` : ''}
+    </div>
+  `).join('');
+}
+
+function wireFeedbackForm() {
+  document.getElementById('feedbackSubmitBtn').addEventListener('click', async () => {
+    const messageEl = document.getElementById('feedbackMessage');
+    const photoEl = document.getElementById('feedbackPhoto');
+    const statusEl = document.getElementById('feedbackStatus');
+    const message = messageEl.value.trim();
+    if (!message) {
+      statusEl.textContent = 'Write a quick description first.';
+      statusEl.className = 'status-line error';
+      return;
+    }
+    statusEl.textContent = 'Sending...';
+    statusEl.className = 'status-line';
+    const photoFile = photoEl.files && photoEl.files[0] ? photoEl.files[0] : null;
+    const result = await submitFeedback(message, photoFile);
+    if (result.ok) {
+      messageEl.value = '';
+      photoEl.value = '';
+      statusEl.textContent = 'Thanks — sent!';
+      statusEl.className = 'status-line success';
+    } else {
+      statusEl.textContent = 'Could not send: ' + result.error;
+      statusEl.className = 'status-line error';
+    }
   });
 }
 
@@ -5458,6 +5592,7 @@ document.addEventListener('DOMContentLoaded', () => {
   safeInit('wireMonthlyUI', wireMonthlyUI);
   safeInit('wireDayReviewUI', wireDayReviewUI);
   safeInit('wireAdminTab', wireAdminTab);
+  safeInit('wireFeedbackForm', wireFeedbackForm);
   safeInit('wireCalendarUI', wireCalendarUI);
   safeInit('wireEditModal', wireEditModal);
   safeInit('renderCalendar', renderCalendar);
