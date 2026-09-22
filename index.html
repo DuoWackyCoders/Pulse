@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922c">
+<link rel="stylesheet" href="style.css?v=20260922d">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -94,6 +94,17 @@
       <button id="orgSetupLogoutBtn" type="button" class="auth-link-btn">Log out</button>
     </div>
 
+    <div id="authMaintenanceView" style="display:none;">
+      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;" id="authMaintenanceMessage">PULSE is temporarily down for maintenance — please check back soon.</p>
+      <button id="maintenanceLogoutBtn" type="button" class="auth-link-btn">Log out</button>
+    </div>
+
+    <div id="authSuspendedView" style="display:none;">
+      <p class="card-subtitle" style="text-align:center; margin:0 0 8px;">Your company's access to PULSE has been suspended.</p>
+      <p class="card-subtitle" style="text-align:center; margin:0 0 20px;" id="authSuspendedReason"></p>
+      <button id="suspendedLogoutBtn" type="button" class="auth-link-btn">Log out</button>
+    </div>
+
     <p id="authStatus" class="status-line" style="margin-top:12px;"></p>
   </div>
 </div>
@@ -131,6 +142,7 @@
     </label>
 
     <button class="nav-tab" data-tab="admin" type="button">⚙️ Admin</button>
+    <button class="nav-tab" data-tab="masterpulse" type="button" id="masterPulseNavBtn" style="display:none;">🛡️ Master Pulse</button>
 
     <select id="themeToggle" class="theme-toggle" title="Choose a theme — also editable in Admin">
       <option value="light">☀️ Peach &amp; Pink (Light)</option>
@@ -854,13 +866,48 @@
 
   </div>
 
+  <div id="tab-masterpulse" class="tab-panel" style="display:none;">
+
+    <section class="card">
+      <h2 class="card-title">Master Pulse</h2>
+      <p class="card-subtitle">This view belongs to you, as the owner of PULSE itself — separate from any one company's admin role. It can see which companies exist and every company's feedback, and can suspend a company or take PULSE down for maintenance. It deliberately cannot see any company's patients or schedules.</p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Site-wide maintenance mode</h2>
+      <p class="card-subtitle">When on, everyone except you sees a "down for maintenance" message instead of PULSE.</p>
+      <label class="field" style="display:flex; flex-direction:row; align-items:center; gap:10px;">
+        <input type="checkbox" id="maintenanceModeToggle" style="width:auto;">
+        Maintenance mode is ON
+      </label>
+      <label class="field" style="margin-top:10px;">Message shown to everyone else
+        <textarea id="maintenanceMessageInput" rows="2" style="width:100%; font-family: var(--font-mono); font-size:0.85rem; padding:9px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text); resize:vertical;"></textarea>
+      </label>
+      <button id="saveMaintenanceBtn" class="btn btn-primary" type="button" style="margin-top:14px;">Save</button>
+      <p id="maintenanceStatus" class="status-line"></p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Companies using PULSE</h2>
+      <p class="card-subtitle">Suspending a company locks out everyone in it immediately — nothing is deleted, and reinstating undoes it instantly.</p>
+      <div id="masterPulseOrgList"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Feedback — every company</h2>
+      <p class="card-subtitle">Same feedback your companies see in their own Admin tab, combined into one list.</p>
+      <div id="masterPulseFeedbackList"></div>
+    </section>
+
+  </div>
+
   </main>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260922c"></script>
-<script src="auth.js?v=20260922c"></script>
-<script src="data.js?v=20260922c"></script>
-<script src="script.js?v=20260922c"></script>
+<script src="supabase-config.js?v=20260922d"></script>
+<script src="auth.js?v=20260922d"></script>
+<script src="data.js?v=20260922d"></script>
+<script src="script.js?v=20260922d"></script>
 </body>
 </html>
