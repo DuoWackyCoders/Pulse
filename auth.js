@@ -20,6 +20,8 @@ function showApp(session) {
   if (typeof initStartAddresses === 'function') initStartAddresses();
   if (typeof initPatients === 'function') initPatients();
   if (typeof initSchedules === 'function') initSchedules();
+  if (typeof initFeedback === 'function') initFeedback();
+  if (typeof initChangelog === 'function') initChangelog();
 }
 
 function showAuthScreen() {

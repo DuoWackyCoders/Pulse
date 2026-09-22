@@ -140,3 +140,102 @@ async function removeStartAddress(id) {
     .eq('user_id', session.user.id);
   if (error) console.error('Failed to delete address', error);
 }
+
+/* ============================================
+   FEEDBACK (Supabase-backed)
+   Bug reports / suggestions submitted from the About tab. Only an org
+   admin can ever read them back (see sql/003_feedback_and_changelog.sql),
+   so this only actually loads anything for an admin — script.js's Admin
+   tab is the only place feedbackEntries gets shown.
+   ============================================ */
+let feedbackEntries = [];
+
+async function initFeedback() {
+  if (window.currentOrgRole !== 'admin') return;
+  const { data, error } = await supabaseClient
+    .from('feedback')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) { console.error('Failed to load feedback', error); return; }
+  feedbackEntries = data || [];
+  if (typeof renderFeedbackInbox === 'function') renderFeedbackInbox();
+}
+
+// Returns { ok: true } or { ok: false, error }. photoFile is an optional
+// File object straight from the <input type="file">; when present it's
+// uploaded first and only the resulting storage path is saved on the
+// feedback row (never a public URL — the bucket is private, so viewing it
+// later always goes through getFeedbackPhotoUrl's signed link instead).
+async function submitFeedback(message, photoFile) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return { ok: false, error: 'Not logged in.' };
+  if (!window.currentOrgId) return { ok: false, error: 'Could not tell which company you belong to — try refreshing.' };
+
+  let photoPath = null;
+  if (photoFile) {
+    photoPath = `${window.currentOrgId}/${Date.now()}_${photoFile.name}`;
+    const { error: uploadError } = await supabaseClient.storage
+      .from('feedback-photos')
+      .upload(photoPath, photoFile);
+    if (uploadError) return { ok: false, error: 'Photo upload failed: ' + uploadError.message };
+  }
+
+  const { error } = await supabaseClient.from('feedback').insert({
+    org_id: window.currentOrgId,
+    message,
+    photo_url: photoPath
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+async function markFeedbackResolved(id, resolved) {
+  const { error } = await supabaseClient
+    .from('feedback')
+    .update({ status: resolved ? 'resolved' : 'open' })
+    .eq('id', id);
+  if (error) { console.error('Failed to update feedback status', error); return false; }
+  const entry = feedbackEntries.find(f => f.id === id);
+  if (entry) entry.status = resolved ? 'resolved' : 'open';
+  return true;
+}
+
+// photo_url on the row is just a storage path (private bucket) — this
+// exchanges it for a short-lived link actually usable in an <img> or link.
+async function getFeedbackPhotoUrl(path) {
+  const { data, error } = await supabaseClient.storage
+    .from('feedback-photos')
+    .createSignedUrl(path, 3600);
+  if (error) { console.error('Failed to get feedback photo link', error); return null; }
+  return data.signedUrl;
+}
+
+/* ============================================
+   CHANGELOG (Supabase-backed)
+   PULSE's own "what's new" list — not org-scoped, everyone logged in
+   sees the same list (see sql/003_feedback_and_changelog.sql).
+   ============================================ */
+let changelogEntries = [];
+
+async function initChangelog() {
+  const { data, error } = await supabaseClient
+    .from('changelog')
+    .select('*')
+    .order('released_at', { ascending: false });
+  if (error) { console.error('Failed to load changelog', error); return; }
+  changelogEntries = data || [];
+  if (typeof renderChangelog === 'function') renderChangelog();
+}
+
+// entry: { title, description, mediaUrl, releasedAt }. Returns { ok, error }.
+async function postChangelogEntry(entry) {
+  const { error } = await supabaseClient.from('changelog').insert({
+    title: entry.title,
+    description: entry.description,
+    media_url: entry.mediaUrl || null,
+    released_at: entry.releasedAt
+  });
+  if (error) return { ok: false, error: error.message };
+  await initChangelog();
+  return { ok: true };
+}
