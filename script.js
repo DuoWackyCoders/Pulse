@@ -9,7 +9,8 @@ const PROVIDER_FILTER_KEY = 'patientRouter.providerFilter.v1';
 let patients = []; // array of patient objects — populated by initPatients() once login completes
 let lastSyncedPatients = new Map(); // id -> JSON snapshot of the last-known-synced-to-Supabase version, used by savePatients() to figure out what actually changed
 let schedulesCache = {}; // { 'YYYY-MM-DD': [stops...] } — populated by initSchedules() once login completes
-let lastSyncedScheduleDays = new Map(); // 'YYYY-MM-DD' -> JSON snapshot of that day's last-known-synced stops array
+let scheduleDaySummaries = {}; // 'YYYY-MM-DD' -> {totalHours, dayStartMinutes, returnHomeMinutes, returnTripMinutes, returnTripMiles, usingRealRoads, totalMiles} | undefined — the day-level stats computed at approve time (per-stop data alone can't reconstruct total drive time/miles), shown in the calendar's day-detail popup
+let lastSyncedScheduleDays = new Map(); // 'YYYY-MM-DD' -> JSON snapshot of {stops, summary} for that day, the last-known-synced version
 let groupSizeMax = DEFAULT_USER_SETTINGS.group_size_max; // max patients per auto-formed group — swapped for the real saved value once login completes
 let activeProviderFilter = localStorage.getItem(PROVIDER_FILTER_KEY) || '';
 let activeGroupFilter = '';
@@ -133,6 +134,16 @@ async function initPatients() {
   renderTable();
   renderGroupSummary();
   if (clientsMap) renderClientsMap();
+  // initSchedules() runs in parallel (both are fired from showApp() without
+  // waiting on each other) and calls renderCalendar() itself the moment
+  // it's done — but renderCalendar() colors each day by looking up its
+  // group in the live `patients` array (groupColor(), above), so if that
+  // happened to finish first, every day rendered grey (patients was still
+  // empty) and nothing repainted it once patients actually arrived. Redoing
+  // it here too, once patients is truly ready, is what corrects that —
+  // whichever of the two init calls finishes LAST ends up with the right
+  // final render either way.
+  if (typeof renderCalendar === 'function') renderCalendar();
 }
 
 // Diffs the in-memory `patients` array against the last-known-synced
@@ -2435,7 +2446,12 @@ function commitApproveWeek() {
   let totalApproved = 0;
   weekResults.forEach(day => {
     if (day.offDay || day.error || !day.stops || day.stops.length === 0) return;
-    recordApprovedSchedule(day.date, day.stops);
+    const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
+    recordApprovedSchedule(day.date, day.stops, {
+      totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
+      returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
+      totalMiles
+    });
     day.stops.forEach(s => recomputeLastVisitDate(s.id));
     totalApproved += day.stops.length;
   });
@@ -3565,7 +3581,12 @@ function commitApproveMonth() {
   let totalApproved = 0;
   monthResults.forEach(day => {
     if (day.emptyGroup || !day.stops || day.stops.length === 0) return;
-    recordApprovedSchedule(day.date, day.stops);
+    const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
+    recordApprovedSchedule(day.date, day.stops, {
+      totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
+      returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
+      totalMiles
+    });
     day.stops.forEach(s => recomputeLastVisitDate(s.id));
     totalApproved += day.stops.length;
   });
@@ -4310,6 +4331,13 @@ async function fetchRouteLegs(startLat, startLng, stops) {
   }
 }
 
+// Filled in by recalcAndRender() below, right before it returns — the
+// day-level totals (miles/hours/start/return-home) it computes are only
+// ever handed to renderRouteSummary() for the on-screen preview and would
+// otherwise be lost the instant the function returns. handleApproveClick()
+// reads this to attach the same numbers to what actually gets saved.
+let lastDailyRouteSummary = null;
+
 async function recalcAndRender() {
   const startTimeStr = document.getElementById('startTime').value || '08:00';
   const visitDuration = parseFloat(document.getElementById('visitDuration').value) || 15;
@@ -4386,6 +4414,10 @@ async function recalcAndRender() {
   renderRouteSummary(dayStartMinutes, returnHomeMinutes, usingRealRoads, returnTripMinutes, returnTripMiles, totalDriveMiles, totalDriveMinutes);
 
   const totalHours = (cursorMinutes - dayStartMinutes) / 60;
+  lastDailyRouteSummary = {
+    totalHours, dayStartMinutes, returnHomeMinutes, returnTripMinutes, returnTripMiles,
+    usingRealRoads, totalMiles: totalDriveMiles
+  };
   renderScheduleLists();
   renderMap();
   return totalHours;
@@ -4636,7 +4668,7 @@ function wireScheduleUI() {
     const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
 
     const commit = () => {
-      recordApprovedSchedule(scheduleDate, scheduledPatients);
+      recordApprovedSchedule(scheduleDate, scheduledPatients, lastDailyRouteSummary);
       scheduledPatients.forEach(sp => recomputeLastVisitDate(sp.id));
       savePatients();
       renderTable();
@@ -4836,10 +4868,12 @@ async function initSchedules() {
   if (error) { console.error('Failed to load schedules', error); return; }
 
   schedulesCache = {};
+  scheduleDaySummaries = {};
   lastSyncedScheduleDays = new Map();
   (data || []).forEach(row => {
     schedulesCache[row.visit_date] = row.stops || [];
-    lastSyncedScheduleDays.set(row.visit_date, JSON.stringify(row.stops || []));
+    scheduleDaySummaries[row.visit_date] = row.summary || null;
+    lastSyncedScheduleDays.set(row.visit_date, JSON.stringify({ stops: row.stops || [], summary: row.summary || null }));
   });
 
   renderCalendar();
@@ -4877,8 +4911,9 @@ async function doSaveSchedules() {
   const toUpsert = [];
   currentDates.forEach(date => {
     const stops = obj[date];
-    const currentJson = JSON.stringify(stops);
-    if (lastSyncedScheduleDays.get(date) !== currentJson) toUpsert.push({ date, stops, currentJson });
+    const summary = scheduleDaySummaries[date] || null;
+    const currentJson = JSON.stringify({ stops, summary });
+    if (lastSyncedScheduleDays.get(date) !== currentJson) toUpsert.push({ date, stops, summary, currentJson });
   });
 
   try {
@@ -4889,12 +4924,12 @@ async function doSaveSchedules() {
         .eq('assigned_to', session.user.id)
         .in('visit_date', deletedDates);
       if (error) console.error('Failed to delete schedule days', error);
-      else deletedDates.forEach(d => lastSyncedScheduleDays.delete(d));
+      else deletedDates.forEach(d => { lastSyncedScheduleDays.delete(d); delete scheduleDaySummaries[d]; });
     }
 
     if (toUpsert.length > 0) {
-      const rows = toUpsert.map(({ date, stops }) => ({
-        org_id: window.currentOrgId, assigned_to: session.user.id, visit_date: date, stops
+      const rows = toUpsert.map(({ date, stops, summary }) => ({
+        org_id: window.currentOrgId, assigned_to: session.user.id, visit_date: date, stops, summary
       }));
       const { error } = await supabaseClient
         .from('schedule_days')
@@ -4981,13 +5016,15 @@ function showOverwriteConfirm(message, onConfirm) {
   });
 }
 
-function recordApprovedSchedule(dateStr, list) {
+function recordApprovedSchedule(dateStr, list, summary) {
   const schedules = loadSchedules();
   schedules[dateStr] = list.map(p => ({
     id: p.id, name: p.name, dob: p.dob, address: p.address,
     group: p.group, provider: p.provider, arrivalMinutes: p.arrivalMinutes,
     lat: p.lat, lng: p.lng
   }));
+  if (summary) scheduleDaySummaries[dateStr] = summary;
+  else delete scheduleDaySummaries[dateStr];
   saveSchedules(schedules);
 }
 
@@ -5080,6 +5117,10 @@ function moveWholeDay(fromDate, toDate) {
 
   schedules[toDate] = fromList;
   delete schedules[fromDate];
+  // The set of stops (and so the day's totals) isn't changing, only which
+  // date it's filed under — carry the summary along instead of losing it.
+  scheduleDaySummaries[toDate] = scheduleDaySummaries[fromDate];
+  delete scheduleDaySummaries[fromDate];
   saveSchedules(schedules);
 
   fromList.forEach(entry => recomputeLastVisitDate(entry.id));
@@ -5196,6 +5237,7 @@ function showCalendarDay(dateStr) {
   const modal = document.getElementById('dayDetailModal');
   const title = document.getElementById('dayDetailTitle');
   const subtitle = document.getElementById('dayDetailSubtitle');
+  const summaryEl = document.getElementById('dayDetailSummary');
   const listEl = document.getElementById('dayDetailList');
 
   title.textContent = dateStr;
@@ -5204,10 +5246,29 @@ function showCalendarDay(dateStr) {
 
   if (list.length === 0) {
     subtitle.textContent = 'No approved schedule for this day.';
+    summaryEl.innerHTML = '';
     listEl.innerHTML = '';
     return;
   }
   subtitle.textContent = `${list.length} patient(s) scheduled — drag this day\'s tile on the calendar to move the whole schedule, or use the buttons below to adjust one patient.`;
+
+  // Day-level totals (start time, drive miles/hours, estimated arrival back
+  // home) are only ever captured at the moment a day is approved — see
+  // recordApprovedSchedule() — so a day approved before that existed, or
+  // one edited since (a patient removed, a time changed) and therefore no
+  // longer accurately summarized, simply has none stored, and nothing
+  // shows here rather than showing a number that's gone stale.
+  const summary = scheduleDaySummaries[dateStr];
+  summaryEl.innerHTML = summary ? `
+    <div class="route-summary" style="margin-bottom:14px;">
+      <span class="rs-item"><span class="rs-label">Start:</span> Home ${minutesToClock(summary.dayStartMinutes)}</span>
+      <span class="rs-item"><span class="rs-label">Arrive home:</span> ${minutesToClock(summary.returnHomeMinutes)}</span>
+      <span class="rs-item"><span class="rs-label">Total hrs:</span> ${summary.totalHours.toFixed(1)}</span>
+      <span class="rs-item"><span class="rs-label">Total miles:</span> ${summary.totalMiles.toFixed(1)} mi</span>
+      <span class="rs-item" style="color:${summary.usingRealRoads ? 'var(--lime-deep)' : 'var(--pink-deep)'};">${summary.usingRealRoads ? '✓ real road times' : '⚠ straight-line estimate'}</span>
+    </div>
+  ` : '';
+
   listEl.innerHTML = list.map((p, i) => `
     <div class="cal-detail-item">
       <div class="di-name">#${i + 1} ${escapeHtml(p.name)}</div>
@@ -5407,6 +5468,9 @@ async function commitArrivalEdit() {
       for (let i = idx; i < list.length; i++) {
         if (list[i].arrivalMinutes !== undefined) list[i].arrivalMinutes += delta;
       }
+      // Shifting arrival times shifts the day's finish/return-home time
+      // too — drop the now-stale summary rather than show the old one.
+      delete scheduleDaySummaries[pendingArrivalEdit.dateStr];
       saveSchedules(schedules);
     }
     document.getElementById('editArrivalModal').style.display = 'none';
@@ -5433,6 +5497,9 @@ window.removeFromDaySchedule = function (dateStr, patientId) {
   if (idx === -1) return;
   list.splice(idx, 1);
   if (list.length === 0) delete schedules[dateStr];
+  // The day's totals no longer reflect who's actually on it — drop the
+  // stale summary rather than keep showing a number that's now wrong.
+  delete scheduleDaySummaries[dateStr];
   saveSchedules(schedules);
 
   recomputeLastVisitDate(patientId);
@@ -5470,6 +5537,10 @@ function commitPatientDateChange() {
 
   if (!schedules[newDate]) schedules[newDate] = [];
   schedules[newDate].push(entry);
+  // Both days' rosters just changed — neither one's stored totals still
+  // apply.
+  delete scheduleDaySummaries[fromDate];
+  delete scheduleDaySummaries[newDate];
   saveSchedules(schedules);
 
   recomputeLastVisitDate(patientId);
