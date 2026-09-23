@@ -2620,6 +2620,88 @@ function renderChangelog() {
   `).join('');
 }
 
+function renderMasterPulse() {
+  const maintToggle = document.getElementById('maintenanceModeToggle');
+  const maintMsg = document.getElementById('maintenanceMessageInput');
+  if (maintToggle) maintToggle.checked = !!platformSettings.maintenance_mode;
+  if (maintMsg) maintMsg.value = platformSettings.maintenance_message || '';
+
+  const orgListEl = document.getElementById('masterPulseOrgList');
+  if (orgListEl) {
+    orgListEl.innerHTML = allOrganizations.length === 0
+      ? '<p class="status-line">No companies yet.</p>'
+      : allOrganizations.map(o => `
+          <div class="search-result-row" style="align-items:flex-start; flex-direction:column; gap:6px;">
+            <div style="display:flex; justify-content:space-between; width:100%; gap:10px; align-items:center;">
+              <strong>${escapeHtml(o.name)}</strong>
+              <button type="button" class="btn-tiny ${o.suspended ? '' : 'btn-tiny-danger'} org-suspend-btn" data-id="${escapeAttr(o.id)}" data-suspended="${o.suspended !== true}">${o.suspended ? '↺ Reinstate' : '⛔ Suspend'}</button>
+            </div>
+            <span class="status-line">Created ${new Date(o.created_at).toLocaleDateString()}${o.suspended ? ' — SUSPENDED' + (o.suspended_reason ? ': ' + escapeHtml(o.suspended_reason) : '') : ''}</span>
+          </div>
+        `).join('');
+  }
+
+  const fbListEl = document.getElementById('masterPulseFeedbackList');
+  if (fbListEl) {
+    fbListEl.innerHTML = allFeedbackEntries.length === 0
+      ? '<p class="status-line">No feedback yet.</p>'
+      : allFeedbackEntries.map(f => `
+          <div class="search-result-row" style="align-items:flex-start; flex-direction:column; gap:6px;">
+            <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
+              <strong style="${f.status === 'resolved' ? 'text-decoration:line-through; opacity:0.6;' : ''}">${escapeHtml(f.message)}</strong>
+              <button type="button" class="btn-tiny owner-feedback-resolve-btn" data-id="${escapeAttr(f.id)}" data-resolved="${f.status !== 'resolved'}">${f.status === 'resolved' ? '↺ Reopen' : '✔ Mark resolved'}</button>
+            </div>
+            <span class="status-line">${escapeHtml(f.organizations ? f.organizations.name : 'Unknown company')} — ${new Date(f.created_at).toLocaleString()}</span>
+            ${f.photo_url ? `<button type="button" class="btn-tiny owner-feedback-photo-btn" data-photo="${escapeAttr(f.photo_url)}">📷 View photo</button>` : ''}
+          </div>
+        `).join('');
+  }
+}
+
+function wireMasterPulseTab() {
+  document.getElementById('saveMaintenanceBtn').addEventListener('click', async () => {
+    const enabled = document.getElementById('maintenanceModeToggle').checked;
+    const message = document.getElementById('maintenanceMessageInput').value.trim();
+    const statusEl = document.getElementById('maintenanceStatus');
+    statusEl.textContent = 'Saving...';
+    statusEl.className = 'status-line';
+    const ok = await saveMaintenanceMode(enabled, message);
+    statusEl.textContent = ok ? 'Saved.' : 'Could not save — check your connection.';
+    statusEl.className = 'status-line ' + (ok ? 'success' : 'error');
+  });
+
+  document.getElementById('masterPulseOrgList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.org-suspend-btn');
+    if (!btn) return;
+    const suspending = btn.dataset.suspended === 'true';
+    let reason = null;
+    if (suspending) {
+      if (!confirm('Suspend this company? Every one of their logins will be locked out immediately — nothing is deleted, and you can reinstate them anytime.')) return;
+      reason = prompt('Reason for suspending (optional, shown to you only):') || '';
+    } else if (!confirm('Reinstate this company? Their logins will work again immediately.')) {
+      return;
+    }
+    const ok = await setOrgSuspended(btn.dataset.id, suspending, reason);
+    if (ok) renderMasterPulse();
+    else alert('Could not update that company — check your connection and try again.');
+  });
+
+  document.getElementById('masterPulseFeedbackList').addEventListener('click', async (e) => {
+    const resolveBtn = e.target.closest('.owner-feedback-resolve-btn');
+    if (resolveBtn) {
+      await markOwnerFeedbackResolved(resolveBtn.dataset.id, resolveBtn.dataset.resolved === 'true');
+      renderMasterPulse();
+      return;
+    }
+    const photoBtn = e.target.closest('.owner-feedback-photo-btn');
+    if (photoBtn) {
+      const url = await getFeedbackPhotoUrl(photoBtn.dataset.photo);
+      if (url) window.open(url, '_blank');
+      else alert('Could not load that photo.');
+    }
+  });
+}
+
 function wireFeedbackForm() {
   document.getElementById('feedbackSubmitBtn').addEventListener('click', async () => {
     const messageEl = document.getElementById('feedbackMessage');
@@ -5593,6 +5675,7 @@ document.addEventListener('DOMContentLoaded', () => {
   safeInit('wireDayReviewUI', wireDayReviewUI);
   safeInit('wireAdminTab', wireAdminTab);
   safeInit('wireFeedbackForm', wireFeedbackForm);
+  safeInit('wireMasterPulseTab', wireMasterPulseTab);
   safeInit('wireCalendarUI', wireCalendarUI);
   safeInit('wireEditModal', wireEditModal);
   safeInit('renderCalendar', renderCalendar);

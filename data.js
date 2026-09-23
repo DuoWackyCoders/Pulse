@@ -239,3 +239,86 @@ async function postChangelogEntry(entry) {
   await initChangelog();
   return { ok: true };
 }
+
+/* ============================================
+   MASTER PULSE (Supabase-backed)
+   The "owner of PULSE itself" view — entirely separate from any one
+   company's admin role. See sql/004_pulse_owner_admin.sql for how this
+   boundary is enforced: a Pulse owner can suspend a company or flip the
+   sitewide maintenance switch, and see feedback across every company, but
+   the database itself never lets them read patient/schedule data.
+   ============================================ */
+window.isPulseOwner = false;
+let allOrganizations = [];
+let allFeedbackEntries = [];
+let platformSettings = { maintenance_mode: false, maintenance_message: '' };
+
+// Whether the CURRENTLY LOGGED IN person is a Pulse owner. A non-owner
+// gets back an empty result here (not an error) — Row Level Security only
+// ever lets someone see their OWN row in pulse_owners, if they have one.
+async function checkPulseOwner() {
+  const { data, error } = await supabaseClient
+    .from('pulse_owners')
+    .select('user_id')
+    .maybeSingle();
+  window.isPulseOwner = !error && !!data;
+  return window.isPulseOwner;
+}
+
+// Safe to call even for a non-owner — the sitewide maintenance flag is
+// readable by anyone logged in (see sql/004), just not editable by them.
+async function checkMaintenanceMode() {
+  const { data, error } = await supabaseClient
+    .from('platform_settings')
+    .select('maintenance_mode, maintenance_message')
+    .eq('id', 'main')
+    .maybeSingle();
+  if (error) { console.error('Failed to check maintenance mode', error); return null; }
+  return data;
+}
+
+async function initMasterPulse() {
+  if (!window.isPulseOwner) return;
+  const [{ data: orgs, error: orgErr }, { data: fb, error: fbErr }, { data: settings, error: settingsErr }] = await Promise.all([
+    supabaseClient.from('organizations').select('id, name, suspended, suspended_reason, created_at').order('created_at', { ascending: false }),
+    supabaseClient.from('feedback').select('*, organizations(name)').order('created_at', { ascending: false }),
+    supabaseClient.from('platform_settings').select('*').eq('id', 'main').single()
+  ]);
+  if (orgErr) console.error('Failed to load organizations', orgErr); else allOrganizations = orgs || [];
+  if (fbErr) console.error('Failed to load all feedback', fbErr); else allFeedbackEntries = fb || [];
+  if (settingsErr) console.error('Failed to load platform settings', settingsErr); else platformSettings = settings || platformSettings;
+  if (typeof renderMasterPulse === 'function') renderMasterPulse();
+}
+
+async function setOrgSuspended(orgId, suspended, reason) {
+  const { error } = await supabaseClient
+    .from('organizations')
+    .update({ suspended, suspended_reason: suspended ? (reason || null) : null })
+    .eq('id', orgId);
+  if (error) { console.error('Failed to update organization', error); return false; }
+  const org = allOrganizations.find(o => o.id === orgId);
+  if (org) { org.suspended = suspended; org.suspended_reason = suspended ? (reason || null) : null; }
+  return true;
+}
+
+async function saveMaintenanceMode(enabled, message) {
+  const { error } = await supabaseClient
+    .from('platform_settings')
+    .update({ maintenance_mode: enabled, maintenance_message: message, updated_at: new Date().toISOString() })
+    .eq('id', 'main');
+  if (error) { console.error('Failed to update platform settings', error); return false; }
+  platformSettings.maintenance_mode = enabled;
+  platformSettings.maintenance_message = message;
+  return true;
+}
+
+async function markOwnerFeedbackResolved(id, resolved) {
+  const { error } = await supabaseClient
+    .from('feedback')
+    .update({ status: resolved ? 'resolved' : 'open' })
+    .eq('id', id);
+  if (error) { console.error('Failed to update feedback status', error); return false; }
+  const entry = allFeedbackEntries.find(f => f.id === id);
+  if (entry) entry.status = resolved ? 'resolved' : 'open';
+  return true;
+}

@@ -22,6 +22,29 @@ function showApp(session) {
   if (typeof initSchedules === 'function') initSchedules();
   if (typeof initFeedback === 'function') initFeedback();
   if (typeof initChangelog === 'function') initChangelog();
+  if (window.isPulseOwner) {
+    const navBtn = document.getElementById('masterPulseNavBtn');
+    if (navBtn) navBtn.style.display = '';
+    if (typeof initMasterPulse === 'function') initMasterPulse();
+  }
+}
+
+function showMaintenanceScreen(message) {
+  hideAllAuthViews();
+  document.getElementById('authScreen').style.display = 'flex';
+  document.getElementById('appRoot').style.display = 'none';
+  document.getElementById('authMaintenanceMessage').textContent =
+    message || 'PULSE is temporarily down for maintenance — please check back soon.';
+  document.getElementById('authMaintenanceView').style.display = 'block';
+}
+
+function showSuspendedScreen(reason) {
+  hideAllAuthViews();
+  document.getElementById('authScreen').style.display = 'flex';
+  document.getElementById('appRoot').style.display = 'none';
+  document.getElementById('authSuspendedReason').textContent =
+    reason ? `Reason given: ${reason}` : '';
+  document.getElementById('authSuspendedView').style.display = 'block';
 }
 
 function showAuthScreen() {
@@ -35,6 +58,8 @@ function hideAllAuthViews() {
   document.getElementById('authResetView').style.display = 'none';
   document.getElementById('authNewPasswordView').style.display = 'none';
   document.getElementById('authOrgSetupView').style.display = 'none';
+  document.getElementById('authMaintenanceView').style.display = 'none';
+  document.getElementById('authSuspendedView').style.display = 'none';
   setAuthStatus('', '');
 }
 
@@ -59,15 +84,27 @@ function showOrgSetupView() {
 }
 
 // Every login lands here first instead of going straight to showApp(). This
-// checks whether the person already belongs to a company (a row in
-// memberships) — if not, they get the one-time "name your company" screen
-// before ever seeing the app. window.currentOrgId/currentOrgRole are left
-// here for the rest of the app (script.js) to read once we wire up the
-// actual data tables to it.
+// checks, in order: are you the owner of PULSE itself (separate from any
+// one company's admin role — see sql/004_pulse_owner_admin.sql); is the
+// whole site in maintenance mode (a Pulse owner still gets in, so they can
+// turn it back off); does the person already belong to a company (a row
+// in memberships) — if not, the one-time "name your company" screen; and
+// is THAT company currently suspended. Only after all of that does
+// window.currentOrgId/currentOrgRole get set and showApp() run.
 async function checkOrgSetup(session) {
+  const isOwner = typeof checkPulseOwner === 'function' ? await checkPulseOwner() : false;
+
+  if (!isOwner && typeof checkMaintenanceMode === 'function') {
+    const maint = await checkMaintenanceMode();
+    if (maint && maint.maintenance_mode) {
+      showMaintenanceScreen(maint.maintenance_message);
+      return;
+    }
+  }
+
   const { data: memberships, error } = await supabaseClient
     .from('memberships')
-    .select('org_id, role')
+    .select('org_id, role, organizations(suspended, suspended_reason)')
     .eq('user_id', session.user.id)
     .limit(1);
 
@@ -77,8 +114,14 @@ async function checkOrgSetup(session) {
   }
 
   if (memberships && memberships.length > 0) {
-    window.currentOrgId = memberships[0].org_id;
-    window.currentOrgRole = memberships[0].role;
+    const membership = memberships[0];
+    const org = membership.organizations;
+    if (org && org.suspended && !isOwner) {
+      showSuspendedScreen(org.suspended_reason);
+      return;
+    }
+    window.currentOrgId = membership.org_id;
+    window.currentOrgRole = membership.role;
     showApp(session);
   } else {
     showOrgSetupView();
@@ -197,6 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('createOrgBtn').addEventListener('click', handleCreateOrg);
   document.getElementById('orgSetupJustMeBtn').addEventListener('click', handleJustMeFill);
   document.getElementById('orgSetupLogoutBtn').addEventListener('click', handleLogOut);
+  document.getElementById('maintenanceLogoutBtn').addEventListener('click', handleLogOut);
+  document.getElementById('suspendedLogoutBtn').addEventListener('click', handleLogOut);
 
   // Fires once immediately with whatever session already exists (or none),
   // then again on every future login/logout — this single listener is what
