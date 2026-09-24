@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260924">
+<link rel="stylesheet" href="style.css?v=20260924b">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -141,6 +141,12 @@
       </select>
     </label>
 
+    <label class="field" id="viewingAsField" style="padding: 0 4px; display:none;">👁️ Viewing app as
+      <select id="viewingAsSelect">
+        <option value="">Myself</option>
+      </select>
+    </label>
+
     <button class="nav-tab" data-tab="admin" type="button">⚙️ Admin</button>
     <button class="nav-tab" data-tab="masterpulse" type="button" id="masterPulseNavBtn" style="display:none;">🛡️ Master Pulse</button>
 
@@ -165,6 +171,11 @@
   </aside>
 
   <main class="main-content">
+
+  <div id="viewingAsBanner" style="display:none;">
+    👁️ Viewing PULSE as <strong id="viewingAsBannerName"></strong> — anything you add or approve is saved as theirs, not yours.
+    <button id="viewingAsSwitchBackBtn" type="button" class="btn-tiny">Switch back to myself</button>
+  </div>
 
   <div id="tab-home" class="tab-panel">
     <section class="card">
@@ -817,6 +828,17 @@
       <p id="adminInfoStatus" class="status-line"></p>
     </section>
 
+    <section class="card" id="adminTeamSection">
+      <h2 class="card-title">Team</h2>
+      <p class="card-subtitle">Add someone else to your company, or check who's already on it. They need to have signed up for PULSE with this exact email first — invite them, then have them sign up (or the other way around), before it'll work.</p>
+      <div id="adminTeamList" style="margin-bottom:14px;"></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="email" id="adminInviteEmail" placeholder="teammate@example.com" style="flex:1; min-width:220px; font-family: var(--font-mono); font-size:0.85rem; padding:9px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text);">
+        <button id="adminInviteBtn" class="btn btn-primary" type="button">Invite</button>
+      </div>
+      <p id="adminInviteStatus" class="status-line"></p>
+    </section>
+
     <section class="card">
       <h2 class="card-title">Starting addresses (home, office, hospital, hub...)</h2>
       <p class="card-subtitle">Add as many as you need — pick which one to use each time on the Schedule tab.</p>
@@ -915,9 +937,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260924"></script>
-<script src="auth.js?v=20260924"></script>
-<script src="data.js?v=20260924"></script>
-<script src="script.js?v=20260924"></script>
+<script src="supabase-config.js?v=20260924b"></script>
+<script src="auth.js?v=20260924b"></script>
+<script src="data.js?v=20260924b"></script>
+<script src="script.js?v=20260924b"></script>
 </body>
 </html>

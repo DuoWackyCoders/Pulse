@@ -711,6 +711,20 @@ input[type="range"] {
 .status-line.success { color: var(--lime-deep); }
 .status-line.error { color: var(--pink-deep); }
 
+#viewingAsBanner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--peach);
+  color: var(--text-on-accent, #2a1a10);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+#viewingAsBanner .btn-tiny { margin-left: auto; }
+
 /* ============================================
    CALENDAR
    ============================================ */
