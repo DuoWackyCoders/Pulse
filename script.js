@@ -2552,6 +2552,31 @@ function wireAdminTab() {
     status.className = 'status-line success';
   });
 
+  document.getElementById('recalcDaySummariesBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('recalcDaySummariesBtn');
+    const status = document.getElementById('recalcDaySummariesStatus');
+    btn.disabled = true;
+    status.textContent = 'Working...';
+    status.className = 'status-line';
+    try {
+      const result = await recalcMissingDaySummaries((done, total) => {
+        status.textContent = `Recalculating ${done} of ${total}...`;
+      });
+      if (result.noAddress) {
+        status.textContent = 'Add a starting address in Admin first — there\'s nothing to calculate drive time from yet.';
+        status.className = 'status-line error';
+      } else if (result.recalculated === 0 && result.skipped === 0) {
+        status.textContent = 'Nothing to fill in — every approved day already has its stats.';
+        status.className = 'status-line success';
+      } else {
+        status.textContent = `Done — filled in ${result.recalculated} day(s)` + (result.skipped > 0 ? `, skipped ${result.skipped} (no usable address/coordinates).` : '.');
+        status.className = 'status-line success';
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   // Delegated (rather than a fresh onclick per row) specifically because a
   // feedback submitter's uploaded filename ends up in data-photo — routing
   // clicks through dataset instead of an inline onclick string keeps that
@@ -4996,6 +5021,56 @@ function recomputeAllLastVisitDates() {
   savePatients();
   return changed;
 }
+
+/**
+ * Backfills the day-level trip summary (start time, drive miles/hours,
+ * estimated arrival home) for approved days that predate the feature that
+ * started saving it — see recordApprovedSchedule(). There's no way to
+ * recover what the day actually looked like when it was approved (which
+ * start address was used, that day's settings), so this is a best-effort
+ * recompute using today's home address and today's start-time/visit-
+ * duration settings against the day's already-saved stop order — the same
+ * "best we can do from what's still available" approach as the existing
+ * Last Visit recalculation button. Returns { recalculated, skipped, noAddress }.
+ */
+async function recalcMissingDaySummaries(onProgress) {
+  const schedules = loadSchedules();
+  const dates = Object.keys(schedules).filter(d => schedules[d] && schedules[d].length > 0 && !scheduleDaySummaries[d]);
+  if (dates.length === 0) return { recalculated: 0, skipped: 0, noAddress: false };
+
+  const home = getHomeCoords() || (loadStartAddresses()[0] ? { lat: loadStartAddresses()[0].lat, lng: loadStartAddresses()[0].lng } : null);
+  if (!home) return { recalculated: 0, skipped: dates.length, noAddress: true };
+
+  const startTimeStr = (document.getElementById('startTime') && document.getElementById('startTime').value) || '08:00';
+  const visitDuration = (document.getElementById('visitDuration') && parseFloat(document.getElementById('visitDuration').value)) || 15;
+
+  let recalculated = 0, skipped = 0;
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+    if (onProgress) onProgress(i + 1, dates.length);
+    const stops = schedules[date].filter(p => p.lat != null && p.lng != null);
+    if (stops.length === 0) { skipped++; continue; }
+    try {
+      const timing = await computeTimingForDay(home, stops, startTimeStr, visitDuration);
+      const totalMiles = timing.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (timing.returnTripMiles || 0);
+      scheduleDaySummaries[date] = {
+        totalHours: timing.totalHours, dayStartMinutes: timing.dayStartMinutes, returnHomeMinutes: timing.returnHomeMinutes,
+        returnTripMinutes: timing.returnTripMinutes, returnTripMiles: timing.returnTripMiles, usingRealRoads: timing.usingRealRoads,
+        totalMiles
+      };
+      recalculated++;
+    } catch (e) {
+      console.error('Failed to recalculate day summary for', date, e);
+      skipped++;
+    }
+    if (i < dates.length - 1) await sleep(300); // be polite to the shared routing service across a whole batch of days
+  }
+
+  await saveSchedules(schedules);
+  renderCalendar();
+  return { recalculated, skipped, noAddress: false };
+}
+
 function datesWithExistingSchedule(dates) {
   const schedules = loadSchedules();
   return dates.filter(d => schedules[d] && schedules[d].length > 0);
