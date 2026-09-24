@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260923">
+<link rel="stylesheet" href="style.css?v=20260924">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -838,6 +838,15 @@
       <p id="recalcLastVisitStatus" class="status-line"></p>
     </section>
 
+    <section class="card">
+      <h2 class="card-title">Fill in missing day-trip stats</h2>
+      <p class="card-subtitle">
+        Days approved before this feature existed have no start time, drive miles/hours, or estimated arrival-home time saved — there was nowhere to show them yet at the time. This recalculates those numbers for every approved day that's still missing them, using today's home address and Schedule tab settings (it can't know what was actually selected back when each day was approved, so treat it as a close best-effort estimate, not an exact record). Days that already have their stats are left untouched.
+      </p>
+      <button id="recalcDaySummariesBtn" class="btn btn-primary" type="button">🔄 Fill in missing day-trip stats</button>
+      <p id="recalcDaySummariesStatus" class="status-line"></p>
+    </section>
+
     <section class="card" id="adminFeedbackSection">
       <h2 class="card-title">Feedback inbox</h2>
       <p class="card-subtitle">Bug reports and suggestions submitted from the About tab.</p>
@@ -906,9 +915,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260923"></script>
-<script src="auth.js?v=20260923"></script>
-<script src="data.js?v=20260923"></script>
-<script src="script.js?v=20260923"></script>
+<script src="supabase-config.js?v=20260924"></script>
+<script src="auth.js?v=20260924"></script>
+<script src="data.js?v=20260924"></script>
+<script src="script.js?v=20260924"></script>
 </body>
 </html>
