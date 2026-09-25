@@ -3034,6 +3034,12 @@ function switchScheduleMode(mode) {
   if (mode === 'weekly') {
     populateWeekStartAddressSelect();
     syncWorkDayCheckboxesUI();
+    const weekStartInput = document.getElementById('weekStartDate');
+    if (!weekStartInput.value) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const monday = mondayOf(todayStr);
+      weekStartInput.value = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+    }
     renderWeekDayCards();
   }
   if (mode === 'monthly') {
