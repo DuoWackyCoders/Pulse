@@ -120,10 +120,14 @@ async function initPatients() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) return;
 
-  const { data, error } = await supabaseClient
-    .from('patients')
-    .select('*')
-    .order('created_at', { ascending: true });
+  // "Viewing as" a specific teammate narrows this to exactly what they're
+  // assigned — same as they'd see themselves. Left alone (the default),
+  // an admin still sees the whole company's patients as always; a regular
+  // provider is already restricted to their own by the database itself
+  // regardless of this filter.
+  let query = supabaseClient.from('patients').select('*').order('created_at', { ascending: true });
+  if (window.viewingAsUserId) query = query.eq('assigned_to', window.viewingAsUserId);
+  const { data, error } = await query;
 
   if (error) { console.error('Failed to load patients', error); return; }
 
@@ -196,7 +200,16 @@ async function doSavePatients() {
     }
 
     if (newPatients.length > 0) {
-      const rows = newPatients.map(({ row }) => ({ org_id: window.currentOrgId, ...row }));
+      // Left alone, a new patient's assigned_to defaults to whoever's
+      // actually logged in (the database column's own default). While
+      // viewing as a teammate, it needs to explicitly point at THEM
+      // instead, or it would silently end up assigned to the admin doing
+      // the viewing rather than the teammate the admin is trying to help.
+      const rows = newPatients.map(({ row }) => ({
+        org_id: window.currentOrgId,
+        ...(window.viewingAsUserId ? { assigned_to: window.viewingAsUserId } : {}),
+        ...row
+      }));
       const { data, error } = await supabaseClient.from('patients').insert(rows).select();
       if (error) {
         console.error('Failed to save new patients', error);
@@ -2490,13 +2503,74 @@ function populateAdminTab() {
   const isAdmin = window.currentOrgRole === 'admin';
   const feedbackSection = document.getElementById('adminFeedbackSection');
   const changelogSection = document.getElementById('adminChangelogSection');
+  const teamSection = document.getElementById('adminTeamSection');
   if (feedbackSection) feedbackSection.style.display = isAdmin ? '' : 'none';
   if (changelogSection) changelogSection.style.display = isAdmin ? '' : 'none';
+  if (teamSection) teamSection.style.display = isAdmin ? '' : 'none';
   if (isAdmin) {
     renderFeedbackInbox();
     const dateEl = document.getElementById('changelogNewDate');
     if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+    refreshTeamMembers();
   }
+}
+
+/* ============================================
+   TEAM / "VIEWING AS"
+   ============================================ */
+let teamMembers = []; // [{user_id, email, role}] — only ever populated for an admin
+
+async function refreshTeamMembers() {
+  if (window.currentOrgRole !== 'admin') return;
+  teamMembers = await listOrgMembers();
+  renderTeamList();
+  populateViewingAsSelect();
+}
+
+function renderTeamList() {
+  const el = document.getElementById('adminTeamList');
+  if (!el) return;
+  const others = teamMembers.filter(m => m.user_id !== window.currentUserId);
+  if (others.length === 0) {
+    el.innerHTML = '<p class="status-line">Just you so far — invite someone below.</p>';
+    return;
+  }
+  const admins = teamMembers.filter(m => m.role === 'admin').length;
+  el.innerHTML = others.map(m => `
+    <div class="search-result-row">
+      <span>${escapeHtml(m.email)} — ${escapeHtml(m.role)}</span>
+      <div style="display:flex; gap:6px;">
+        <button type="button" class="btn-tiny team-role-btn" data-id="${escapeAttr(m.user_id)}" data-role="${m.role === 'admin' ? 'provider' : 'admin'}">Make ${m.role === 'admin' ? 'provider' : 'admin'}</button>
+        <button type="button" class="btn-tiny btn-tiny-danger team-remove-btn" data-id="${escapeAttr(m.user_id)}" data-name="${escapeAttr(m.email)}" ${m.role === 'admin' && admins <= 1 ? 'disabled title="Your company needs at least one admin"' : ''}>✖ Remove</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function populateViewingAsSelect() {
+  const field = document.getElementById('viewingAsField');
+  const sel = document.getElementById('viewingAsSelect');
+  if (!field || !sel) return;
+  const isAdmin = window.currentOrgRole === 'admin';
+  const others = teamMembers.filter(m => m.user_id !== window.currentUserId);
+  field.style.display = (isAdmin && others.length > 0) ? '' : 'none';
+  if (!isAdmin) return;
+  sel.innerHTML = '<option value="">Myself</option>' +
+    others.map(m => `<option value="${escapeAttr(m.user_id)}" ${m.user_id === window.viewingAsUserId ? 'selected' : ''}>${escapeHtml(m.email)} (${escapeHtml(m.role)})</option>`).join('');
+}
+
+async function switchViewingAs(userId, label) {
+  window.viewingAsUserId = userId || null;
+  window.viewingAsLabel = userId ? label : null;
+
+  const banner = document.getElementById('viewingAsBanner');
+  const bannerName = document.getElementById('viewingAsBannerName');
+  if (banner) banner.style.display = userId ? 'flex' : 'none';
+  if (bannerName) bannerName.textContent = label || '';
+
+  await initPatients();
+  await initSchedules();
+  renderCalendar();
 }
 
 function renderAdminAddressList() {
@@ -2622,6 +2696,61 @@ function wireAdminTab() {
       statusEl.textContent = 'Could not post: ' + result.error;
       statusEl.className = 'status-line error';
     }
+  });
+
+  document.getElementById('adminInviteBtn').addEventListener('click', async () => {
+    const emailEl = document.getElementById('adminInviteEmail');
+    const statusEl = document.getElementById('adminInviteStatus');
+    const email = emailEl.value.trim();
+    if (!email) { statusEl.textContent = 'Enter an email first.'; statusEl.className = 'status-line error'; return; }
+    statusEl.textContent = 'Inviting...';
+    statusEl.className = 'status-line';
+    const result = await inviteTeammate(email);
+    if (result === 'added') {
+      emailEl.value = '';
+      statusEl.textContent = `Added ${email} to your team.`;
+      statusEl.className = 'status-line success';
+      await refreshTeamMembers();
+    } else if (result === 'already_member') {
+      statusEl.textContent = `${email} is already on your team.`;
+      statusEl.className = 'status-line error';
+    } else if (result === 'not_found') {
+      statusEl.textContent = `Nobody's signed up for PULSE with that email yet — have them sign up first (with this exact email), then invite them again.`;
+      statusEl.className = 'status-line error';
+    } else {
+      statusEl.textContent = 'Something went wrong — check your connection and try again.';
+      statusEl.className = 'status-line error';
+    }
+  });
+
+  document.getElementById('adminTeamList').addEventListener('click', async (e) => {
+    const removeBtn = e.target.closest('.team-remove-btn');
+    if (removeBtn && !removeBtn.disabled) {
+      if (!confirm(`Remove ${removeBtn.dataset.name} from your company? They'll immediately lose access — their existing patients/schedule stay in your company's records.`)) return;
+      const ok = await removeTeammate(removeBtn.dataset.id);
+      if (ok) await refreshTeamMembers();
+      else alert('Could not remove them — check your connection and try again.');
+      return;
+    }
+    const roleBtn = e.target.closest('.team-role-btn');
+    if (roleBtn) {
+      const ok = await changeTeammateRole(roleBtn.dataset.id, roleBtn.dataset.role);
+      if (ok) await refreshTeamMembers();
+      else alert('Could not change their role — check your connection and try again.');
+    }
+  });
+}
+
+function wireViewingAs() {
+  document.getElementById('viewingAsSelect').addEventListener('change', async (e) => {
+    const sel = e.target;
+    const userId = sel.value || null;
+    const label = userId ? sel.options[sel.selectedIndex].text : null;
+    await switchViewingAs(userId, label);
+  });
+  document.getElementById('viewingAsSwitchBackBtn').addEventListener('click', async () => {
+    document.getElementById('viewingAsSelect').value = '';
+    await switchViewingAs(null, null);
   });
 }
 
@@ -4885,9 +5014,18 @@ async function initSchedules() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) return;
 
+  // schedule_days has one row per (person, date) — an admin's unfiltered
+  // query used to pull back EVERY provider's rows at once and merge them
+  // into one calendar keyed only by date, so two providers with an
+  // approved day on the same date would silently clobber each other in
+  // memory. Always scoping to exactly one person — yourself by default,
+  // or whoever you're currently viewing as — makes that collision
+  // impossible, and is also what actually makes "viewing as" show their
+  // calendar instead of yours.
   const { data, error } = await supabaseClient
     .from('schedule_days')
     .select('*')
+    .eq('assigned_to', window.viewingAsUserId || session.user.id)
     .order('visit_date', { ascending: true });
 
   if (error) { console.error('Failed to load schedules', error); return; }
@@ -4941,12 +5079,14 @@ async function doSaveSchedules() {
     if (lastSyncedScheduleDays.get(date) !== currentJson) toUpsert.push({ date, stops, summary, currentJson });
   });
 
+  const targetUserId = window.viewingAsUserId || session.user.id;
+
   try {
     if (deletedDates.length > 0) {
       const { error } = await supabaseClient
         .from('schedule_days')
         .delete()
-        .eq('assigned_to', session.user.id)
+        .eq('assigned_to', targetUserId)
         .in('visit_date', deletedDates);
       if (error) console.error('Failed to delete schedule days', error);
       else deletedDates.forEach(d => { lastSyncedScheduleDays.delete(d); delete scheduleDaySummaries[d]; });
@@ -4954,7 +5094,7 @@ async function doSaveSchedules() {
 
     if (toUpsert.length > 0) {
       const rows = toUpsert.map(({ date, stops, summary }) => ({
-        org_id: window.currentOrgId, assigned_to: session.user.id, visit_date: date, stops, summary
+        org_id: window.currentOrgId, assigned_to: targetUserId, visit_date: date, stops, summary
       }));
       const { error } = await supabaseClient
         .from('schedule_days')
@@ -5822,6 +5962,7 @@ document.addEventListener('DOMContentLoaded', () => {
   safeInit('wireAdminTab', wireAdminTab);
   safeInit('wireFeedbackForm', wireFeedbackForm);
   safeInit('wireMasterPulseTab', wireMasterPulseTab);
+  safeInit('wireViewingAs', wireViewingAs);
   safeInit('wireCalendarUI', wireCalendarUI);
   safeInit('wireEditModal', wireEditModal);
   safeInit('renderCalendar', renderCalendar);

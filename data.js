@@ -227,6 +227,51 @@ async function initChangelog() {
   if (typeof renderChangelog === 'function') renderChangelog();
 }
 
+/* ============================================
+   TEAMMATES (Supabase-backed)
+   Adding a second (or third...) person to your company, and viewing the
+   app exactly as one of them sees it. See sql/006_teammates.sql — an
+   invite only works if that email already has a PULSE account; the app
+   itself never sends email or reads anyone's address directly.
+   ============================================ */
+
+// Returns 'added' | 'not_found' | 'already_member' | 'error'.
+async function inviteTeammate(email) {
+  const { data, error } = await supabaseClient.rpc('invite_teammate', {
+    target_org_id: window.currentOrgId,
+    teammate_email: email
+  });
+  if (error) { console.error('Failed to invite teammate', error); return 'error'; }
+  return data;
+}
+
+// Returns [{ user_id, email, role }, ...] or [] on failure.
+async function listOrgMembers() {
+  const { data, error } = await supabaseClient.rpc('list_org_members', { target_org_id: window.currentOrgId });
+  if (error) { console.error('Failed to load team members', error); return []; }
+  return data || [];
+}
+
+async function removeTeammate(userId) {
+  const { error } = await supabaseClient
+    .from('memberships')
+    .delete()
+    .eq('org_id', window.currentOrgId)
+    .eq('user_id', userId);
+  if (error) { console.error('Failed to remove teammate', error); return false; }
+  return true;
+}
+
+async function changeTeammateRole(userId, role) {
+  const { error } = await supabaseClient
+    .from('memberships')
+    .update({ role })
+    .eq('org_id', window.currentOrgId)
+    .eq('user_id', userId);
+  if (error) { console.error('Failed to change teammate role', error); return false; }
+  return true;
+}
+
 // entry: { title, description, mediaUrl, releasedAt }. Returns { ok, error }.
 async function postChangelogEntry(entry) {
   const { error } = await supabaseClient.from('changelog').insert({

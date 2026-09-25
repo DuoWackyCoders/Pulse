@@ -22,6 +22,7 @@ function showApp(session) {
   if (typeof initSchedules === 'function') initSchedules();
   if (typeof initFeedback === 'function') initFeedback();
   if (typeof initChangelog === 'function') initChangelog();
+  if (window.currentOrgRole === 'admin' && typeof refreshTeamMembers === 'function') refreshTeamMembers();
   if (window.isPulseOwner) {
     const navBtn = document.getElementById('masterPulseNavBtn');
     if (navBtn) navBtn.style.display = '';
@@ -122,6 +123,11 @@ async function checkOrgSetup(session) {
     }
     window.currentOrgId = membership.org_id;
     window.currentOrgRole = membership.role;
+    window.currentUserId = session.user.id;
+    // "Viewing as" always starts as yourself — an admin explicitly picks a
+    // teammate from here to see the app through their eyes instead.
+    window.viewingAsUserId = null;
+    window.viewingAsLabel = null;
     showApp(session);
   } else {
     showOrgSetupView();
