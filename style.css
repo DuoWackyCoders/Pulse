@@ -815,6 +815,27 @@ input[type="range"] {
   gap: 16px;
 }
 
+/* Groups a Schedule tab's fields into labeled clusters (When, Who, Timing...)
+   instead of one long unbroken row — every field stays visible and
+   editable, this only changes how it reads at a glance. */
+.field-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 18px;
+  margin-bottom: 16px;
+  background: var(--surface-alt);
+}
+.field-group:last-of-type { margin-bottom: 0; }
+.field-group-title {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin: 0 0 12px;
+}
+
 .field {
   display: flex;
   flex-direction: column;

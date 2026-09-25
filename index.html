@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260926">
+<link rel="stylesheet" href="style.css?v=20260926b">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -208,53 +208,68 @@
       <h2 class="card-title">Build today's route</h2>
       <p class="card-subtitle">Pick a group, set how many stops, and generate an optimized order. Drive times are straight-line estimates.</p>
 
-      <div class="schedule-grid">
-        <label class="field">Date being scheduled
-          <input type="date" id="scheduleDate">
-        </label>
-        <label class="field">Starting address (home base)
-          <div style="display:flex; gap:8px; align-items:center;">
-            <select id="startAddressSelect" style="flex:1; min-width:0;">
-              <option value="">+ Add new address...</option>
-            </select>
-            <button id="showAddAddressBtn" type="button" title="Add a new starting address" style="flex-shrink:0; width:38px; height:38px; border-radius:50%; border:none; background: var(--peach); color: var(--text-on-accent); font-size:1.2rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1;">+</button>
-          </div>
-        </label>
-        <div id="newAddressForm" class="field" style="display:none; grid-column: 1 / -1;">
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <input type="text" id="newAddressLabel" placeholder="Label (e.g. Office)" style="flex:1; min-width:140px;">
-            <input type="text" id="newAddressText" placeholder="Full address" style="flex:2; min-width:200px;">
-            <button id="saveNewAddressBtn" class="btn btn-secondary" type="button">Save address</button>
-            <button id="cancelNewAddressBtn" class="btn btn-ghost" type="button">Cancel</button>
+      <div class="field-group">
+        <h3 class="field-group-title">When &amp; where</h3>
+        <div class="schedule-grid">
+          <label class="field">Date being scheduled
+            <input type="date" id="scheduleDate">
+          </label>
+          <label class="field">Starting address (home base)
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="startAddressSelect" style="flex:1; min-width:0;">
+                <option value="">+ Add new address...</option>
+              </select>
+              <button id="showAddAddressBtn" type="button" title="Add a new starting address" style="flex-shrink:0; width:38px; height:38px; border-radius:50%; border:none; background: var(--peach); color: var(--text-on-accent); font-size:1.2rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1;">+</button>
+            </div>
+          </label>
+          <div id="newAddressForm" class="field" style="display:none; grid-column: 1 / -1;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <input type="text" id="newAddressLabel" placeholder="Label (e.g. Office)" style="flex:1; min-width:140px;">
+              <input type="text" id="newAddressText" placeholder="Full address" style="flex:2; min-width:200px;">
+              <button id="saveNewAddressBtn" class="btn btn-secondary" type="button">Save address</button>
+              <button id="cancelNewAddressBtn" class="btn btn-ghost" type="button">Cancel</button>
+            </div>
           </div>
         </div>
-        <label class="field">Group
-          <select id="groupSelect"></select>
-        </label>
-        <label class="field">+ Also include (optional)
-          <select id="groupSelect2"></select>
-        </label>
-        <label class="field">Stops today
-          <input type="number" id="stopCount" min="1" value="8">
-        </label>
-        <label class="field">Start time
-          <input type="time" id="startTime" value="08:00">
-        </label>
-        <label class="field">Return time (optional — be home by)
-          <input type="time" id="returnTime">
-        </label>
-        <label class="field">Visit duration (min, default)
-          <input type="number" id="visitDuration" min="1" value="15">
-        </label>
-        <label class="field">Max hours before warning
-          <input type="number" id="maxHours" min="1" step="0.5" value="7">
-        </label>
-        <label class="field">Route direction
-          <select id="routeDirection">
-            <option value="closest">Closest first</option>
-            <option value="furthest" selected>Furthest first (default — beats traffic, finish near home)</option>
-          </select>
-        </label>
+      </div>
+
+      <div class="field-group">
+        <h3 class="field-group-title">Who to see</h3>
+        <div class="schedule-grid">
+          <label class="field">Group
+            <select id="groupSelect"></select>
+          </label>
+          <label class="field">+ Also include (optional)
+            <select id="groupSelect2"></select>
+          </label>
+          <label class="field">Stops today
+            <input type="number" id="stopCount" min="1" value="8">
+          </label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <h3 class="field-group-title">Timing &amp; constraints</h3>
+        <div class="schedule-grid">
+          <label class="field">Start time
+            <input type="time" id="startTime" value="08:00">
+          </label>
+          <label class="field">Return time (optional — be home by)
+            <input type="time" id="returnTime">
+          </label>
+          <label class="field">Visit duration (min, default)
+            <input type="number" id="visitDuration" min="1" value="15">
+          </label>
+          <label class="field">Max hours before warning
+            <input type="number" id="maxHours" min="1" step="0.5" value="7">
+          </label>
+          <label class="field">Route direction
+            <select id="routeDirection">
+              <option value="closest">Closest first</option>
+              <option value="furthest" selected>Furthest first (default — beats traffic, finish near home)</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
@@ -937,9 +952,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260926"></script>
-<script src="auth.js?v=20260926"></script>
-<script src="data.js?v=20260926"></script>
-<script src="script.js?v=20260926"></script>
+<script src="supabase-config.js?v=20260926b"></script>
+<script src="auth.js?v=20260926b"></script>
+<script src="data.js?v=20260926b"></script>
+<script src="script.js?v=20260926b"></script>
 </body>
 </html>
