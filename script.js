@@ -1966,7 +1966,22 @@ async function trimStopsToReturnTime(startCoords, orderedPatients, startTimeStr,
     const check = await computeTimingForDay(startCoords, flatStops, startTimeStr, defaultVisitDuration);
     if (check.returnHomeMinutes <= returnTimeMinutes) { timing = check; break; }
     if (keepUnits.length === 1) { timing = check; exception = true; break; }
-    keepUnits = keepUnits.slice(0, -1);
+    // Always dropping whichever unit happens to be LAST in the route
+    // (previously: keepUnits.slice(0, -1)) is wrong more often than not —
+    // for a "furthest first" route the last stop is deliberately the one
+    // closest to home already, so that always cut the cheap, efficient
+    // stop and left the expensive, far-out-of-the-way one behind. Instead,
+    // try dropping each remaining unit in turn and keep whichever removal
+    // actually shortens the round trip the most (cheap straight-line
+    // distance, no extra real-road calls — only the final accepted set
+    // gets a real computeTimingForDay check, same as before).
+    let bestIdx = keepUnits.length - 1, bestLen = Infinity;
+    for (let idx = 0; idx < keepUnits.length; idx++) {
+      const candidateStops = keepUnits.slice(0, idx).concat(keepUnits.slice(idx + 1)).flat();
+      const len = candidateStops.length ? roundTripLength(startCoords.lat, startCoords.lng, candidateStops) : 0;
+      if (len < bestLen) { bestLen = len; bestIdx = idx; }
+    }
+    keepUnits = keepUnits.slice(0, bestIdx).concat(keepUnits.slice(bestIdx + 1));
   }
 
   const trimmedCount = orderedPatients.length - timing.stops.length;
