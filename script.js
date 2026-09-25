@@ -68,6 +68,28 @@ function applyLoadedUserSettings() {
 
   syncWorkDayCheckboxesUI();
 
+  // Schedule tab defaults — only set a field from her saved value when
+  // there IS one; otherwise leave whatever's already in the markup
+  // (today's hardcoded defaults) alone rather than overwriting it with
+  // something blank.
+  const setIfSaved = (id, value) => {
+    if (value === null || value === undefined || value === '') return;
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  };
+  setIfSaved('stopCount', userSettings.stop_count);
+  setIfSaved('startTime', userSettings.start_time);
+  setIfSaved('returnTime', userSettings.return_time);
+  setIfSaved('visitDuration', userSettings.visit_duration);
+  setIfSaved('maxHours', userSettings.max_hours);
+  setIfSaved('routeDirection', userSettings.route_direction);
+  // Her saved starting address may not have loaded into the dropdown yet
+  // (initStartAddresses() runs in parallel with this, not before it) —
+  // populateStartAddressSelect() itself now prefers home_address_id
+  // whenever it (re)runs, so re-calling it here covers the case where the
+  // dropdown built first with the wrong default already selected.
+  if (typeof populateStartAddressSelect === 'function') populateStartAddressSelect();
+
   const adminTab = document.getElementById('tab-admin');
   if (adminTab && adminTab.style.display !== 'none') populateAdminTab();
 }
@@ -1535,7 +1557,10 @@ function populateStartAddressSelect() {
   const current = sel.value;
   sel.innerHTML = '<option value="">+ Add new address...</option>' +
     saved.map(a => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.address)}</option>`).join('');
+  // Already picked something this session -> keep it. Otherwise prefer her
+  // saved default starting address, falling back to whichever is first.
   if (saved.some(a => a.id === current)) sel.value = current;
+  else if (userSettings.home_address_id && saved.some(a => a.id === userSettings.home_address_id)) sel.value = userSettings.home_address_id;
   else if (saved.length) sel.value = saved[0].id;
   updateAddressFormVisibility();
 }
@@ -1643,7 +1668,13 @@ function nearestNeighborOrder(fromLat, fromLng, list) {
     ordered.push(next);
     curLat = next.lat; curLng = next.lng;
   }
-  return twoOptImprove(fromLat, fromLng, ordered);
+  // 2-opt, then Or-opt (catches what 2-opt structurally can't — a single
+  // stop stranded in the wrong spot), then 2-opt again since relocating a
+  // stop can open up a reversal that wasn't available before.
+  let result = twoOptImprove(fromLat, fromLng, ordered);
+  result = orOptImprove(fromLat, fromLng, result);
+  result = twoOptImprove(fromLat, fromLng, result);
+  return result;
 }
 
 // Orders whole location units geographically instead of individual patients
@@ -1688,16 +1719,25 @@ function chunkUnitsRespectingAddress(orderedUnits, stopCount) {
  * real-road times are still fetched fresh from the routing service on
  * this final, improved order.
  */
+// Total distance for the WHOLE day: home -> stop 1 -> ... -> last stop ->
+// back home. Both local-search passes below compare candidate routes by
+// this, not just the one-way distance to the last stop — optimizing only
+// the outbound leg can leave the day's last stop stranded far from home,
+// which shows up as exactly the "drove past someone, had to backtrack"
+// feeling, because the route was never actually being judged on the trip
+// home at all.
+function roundTripLength(fromLat, fromLng, route) {
+  if (route.length === 0) return 0;
+  let total = haversineMiles(fromLat, fromLng, route[0].lat, route[0].lng);
+  for (let i = 0; i < route.length - 1; i++) {
+    total += haversineMiles(route[i].lat, route[i].lng, route[i + 1].lat, route[i + 1].lng);
+  }
+  total += haversineMiles(route[route.length - 1].lat, route[route.length - 1].lng, fromLat, fromLng);
+  return total;
+}
+
 function twoOptImprove(fromLat, fromLng, list) {
   if (list.length < 3) return list;
-
-  const legLength = (route) => {
-    let total = haversineMiles(fromLat, fromLng, route[0].lat, route[0].lng);
-    for (let i = 0; i < route.length - 1; i++) {
-      total += haversineMiles(route[i].lat, route[i].lng, route[i + 1].lat, route[i + 1].lng);
-    }
-    return total;
-  };
 
   let route = [...list];
   let improved = true;
@@ -1708,10 +1748,45 @@ function twoOptImprove(fromLat, fromLng, list) {
     for (let i = 0; i < route.length - 1; i++) {
       for (let j = i + 1; j < route.length; j++) {
         const candidate = route.slice(0, i).concat(route.slice(i, j + 1).reverse(), route.slice(j + 1));
-        if (legLength(candidate) < legLength(route) - 1e-9) {
+        if (roundTripLength(fromLat, fromLng, candidate) < roundTripLength(fromLat, fromLng, route) - 1e-9) {
           route = candidate;
           improved = true;
         }
+      }
+    }
+  }
+  return route;
+}
+
+// Or-opt: catches a different class of inefficiency than 2-opt — a single
+// stop sitting in the wrong SPOT in the order (2-opt only ever reverses a
+// stretch of the route, which can't fix one stop stranded out of sequence
+// on its own). Tries relocating each stop to every other position, one at
+// a time, keeping the move only when it actually shortens the full round
+// trip. Runs after 2-opt, then 2-opt runs once more since an Or-opt move
+// can open up a new reversal it couldn't see before.
+function orOptImprove(fromLat, fromLng, list) {
+  if (list.length < 3) return list;
+
+  let route = [...list];
+  let improved = true;
+  let guard = 0;
+  while (improved && guard < 100) {
+    improved = false;
+    guard++;
+    for (let i = 0; i < route.length; i++) {
+      const stop = route[i];
+      const without = route.slice(0, i).concat(route.slice(i + 1));
+      const currentLength = roundTripLength(fromLat, fromLng, route);
+      let bestJ = -1, bestLength = currentLength;
+      for (let j = 0; j <= without.length; j++) {
+        const candidate = without.slice(0, j).concat([stop], without.slice(j));
+        const len = roundTripLength(fromLat, fromLng, candidate);
+        if (len < bestLength - 1e-9) { bestLength = len; bestJ = j; }
+      }
+      if (bestJ !== -1) {
+        route = without.slice(0, bestJ).concat([stop], without.slice(bestJ));
+        improved = true;
       }
     }
   }
@@ -4822,6 +4897,26 @@ function wireScheduleUI() {
     document.getElementById(id).addEventListener('change', () => {
       if (scheduledPatients.length) recalcAndRender();
     });
+  });
+
+  // Remembers her usual Schedule tab settings so they stop resetting to a
+  // generic default every login — each one saves the moment she changes
+  // it, independent of whether a route happens to be showing right now.
+  const scheduleDefaultFields = [
+    ['stopCount', 'stop_count', v => parseInt(v, 10) || null],
+    ['startTime', 'start_time', v => v || ''],
+    ['returnTime', 'return_time', v => v || ''],
+    ['visitDuration', 'visit_duration', v => parseInt(v, 10) || null],
+    ['maxHours', 'max_hours', v => parseFloat(v) || null],
+    ['routeDirection', 'route_direction', v => v || ''],
+  ];
+  scheduleDefaultFields.forEach(([id, settingKey, parse]) => {
+    document.getElementById(id).addEventListener('change', (e) => {
+      saveUserSettings({ [settingKey]: parse(e.target.value) });
+    });
+  });
+  document.getElementById('startAddressSelect').addEventListener('change', (e) => {
+    if (e.target.value) saveUserSettings({ home_address_id: e.target.value });
   });
 
   document.getElementById('exportScheduleCsvBtn').addEventListener('click', () => {
