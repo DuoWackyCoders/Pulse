@@ -83,12 +83,27 @@ function applyLoadedUserSettings() {
   setIfSaved('visitDuration', userSettings.visit_duration);
   setIfSaved('maxHours', userSettings.max_hours);
   setIfSaved('routeDirection', userSettings.route_direction);
+  // Same "how she usually runs a route" defaults, applied to the Weekly and
+  // Monthly builders too — without this she'd have to re-type start time,
+  // return time, visit duration and route direction every time she switched
+  // modes, even though they saved fine on the Daily tab.
+  setIfSaved('weekStartTime', userSettings.start_time);
+  setIfSaved('weekReturnTime', userSettings.return_time);
+  setIfSaved('weekVisitDuration', userSettings.visit_duration);
+  setIfSaved('weekRouteDirection', userSettings.route_direction);
+  setIfSaved('monthStopCount', userSettings.stop_count);
+  setIfSaved('monthStartTime', userSettings.start_time);
+  setIfSaved('monthReturnTime', userSettings.return_time);
+  setIfSaved('monthVisitDuration', userSettings.visit_duration);
+  setIfSaved('monthRouteDirection', userSettings.route_direction);
   // Her saved starting address may not have loaded into the dropdown yet
   // (initStartAddresses() runs in parallel with this, not before it) —
   // populateStartAddressSelect() itself now prefers home_address_id
   // whenever it (re)runs, so re-calling it here covers the case where the
   // dropdown built first with the wrong default already selected.
   if (typeof populateStartAddressSelect === 'function') populateStartAddressSelect();
+  if (typeof populateWeekStartAddressSelect === 'function') populateWeekStartAddressSelect();
+  if (typeof populateMonthStartAddressSelect === 'function') populateMonthStartAddressSelect();
 
   const adminTab = document.getElementById('tab-admin');
   if (adminTab && adminTab.style.display !== 'none') populateAdminTab();
@@ -2110,9 +2125,15 @@ function syncWorkDayCheckboxesUI() {
 function populateWeekStartAddressSelect() {
   const sel = document.getElementById('weekStartAddressSelect');
   const saved = loadStartAddresses();
+  const current = sel.value;
   sel.innerHTML = saved.length
     ? saved.map(a => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.address)}</option>`).join('')
     : '<option value="">No saved address — add one on the Daily tab first</option>';
+  // Already picked something this session -> keep it. Otherwise prefer her
+  // saved default starting address, falling back to whichever is first.
+  if (saved.some(a => a.id === current)) sel.value = current;
+  else if (userSettings.home_address_id && saved.some(a => a.id === userSettings.home_address_id)) sel.value = userSettings.home_address_id;
+  else if (saved.length) sel.value = saved[0].id;
 }
 
 async function generateWeek() {
@@ -3120,9 +3141,15 @@ window.undoAllMonthChanges = function () {
 function populateMonthStartAddressSelect() {
   const sel = document.getElementById('monthStartAddressSelect');
   const saved = loadStartAddresses();
+  const current = sel.value;
   sel.innerHTML = saved.length
     ? saved.map(a => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.address)}</option>`).join('')
     : '<option value="">No saved address — add one on the Daily tab first</option>';
+  // Already picked something this session -> keep it. Otherwise prefer her
+  // saved default starting address, falling back to whichever is first.
+  if (saved.some(a => a.id === current)) sel.value = current;
+  else if (userSettings.home_address_id && saved.some(a => a.id === userSettings.home_address_id)) sel.value = userSettings.home_address_id;
+  else if (saved.length) sel.value = saved[0].id;
 }
 
 let monthWeekPatterns = {}; // { weekIdx: [monBool, tueBool, wedBool, thuBool, friBool] } — only for the currently-selected month, rebuilt whenever the month changes
@@ -4925,13 +4952,29 @@ function wireScheduleUI() {
     ['maxHours', 'max_hours', v => parseFloat(v) || null],
     ['routeDirection', 'route_direction', v => v || ''],
   ];
-  scheduleDefaultFields.forEach(([id, settingKey, parse]) => {
+  // Same fields, same settings keys, on the Weekly and Monthly builders —
+  // changing "start time" on any one of the three tabs updates the shared
+  // default for all of them, so she only ever has to set it once.
+  const weekMonthDefaultFields = [
+    ['weekStartTime', 'start_time', v => v || ''],
+    ['weekReturnTime', 'return_time', v => v || ''],
+    ['weekVisitDuration', 'visit_duration', v => parseInt(v, 10) || null],
+    ['weekRouteDirection', 'route_direction', v => v || ''],
+    ['monthStopCount', 'stop_count', v => parseInt(v, 10) || null],
+    ['monthStartTime', 'start_time', v => v || ''],
+    ['monthReturnTime', 'return_time', v => v || ''],
+    ['monthVisitDuration', 'visit_duration', v => parseInt(v, 10) || null],
+    ['monthRouteDirection', 'route_direction', v => v || ''],
+  ];
+  scheduleDefaultFields.concat(weekMonthDefaultFields).forEach(([id, settingKey, parse]) => {
     document.getElementById(id).addEventListener('change', (e) => {
       saveUserSettings({ [settingKey]: parse(e.target.value) });
     });
   });
-  document.getElementById('startAddressSelect').addEventListener('change', (e) => {
-    if (e.target.value) saveUserSettings({ home_address_id: e.target.value });
+  ['startAddressSelect', 'weekStartAddressSelect', 'monthStartAddressSelect'].forEach(id => {
+    document.getElementById(id).addEventListener('change', (e) => {
+      if (e.target.value) saveUserSettings({ home_address_id: e.target.value });
+    });
   });
 
   document.getElementById('exportScheduleCsvBtn').addEventListener('click', () => {
