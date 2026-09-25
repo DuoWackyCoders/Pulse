@@ -16,7 +16,16 @@ const DEFAULT_USER_SETTINGS = {
   extra_columns: [],
   practitioner_name: '',
   practitioner_phone: '',
-  practitioner_email: ''
+  practitioner_email: '',
+  // Schedule tab defaults — remembered so they don't reset to a generic
+  // value every login. null/'' here just means "nothing saved yet";
+  // script.js falls back to sensible hardcoded values in that case.
+  stop_count: null,
+  start_time: '',
+  return_time: '',
+  visit_duration: null,
+  max_hours: null,
+  route_direction: ''
 };
 
 // Seeds the starting theme from the same local anti-flash cache the inline
@@ -60,7 +69,13 @@ async function initUserSettings() {
       extra_columns: data.extra_columns || [],
       practitioner_name: data.practitioner_name || '',
       practitioner_phone: data.practitioner_phone || '',
-      practitioner_email: data.practitioner_email || ''
+      practitioner_email: data.practitioner_email || '',
+      stop_count: data.stop_count ?? null,
+      start_time: data.start_time || '',
+      return_time: data.return_time || '',
+      visit_duration: data.visit_duration ?? null,
+      max_hours: data.max_hours ?? null,
+      route_direction: data.route_direction || ''
     };
   } else {
     // First login ever for this person — create their settings row with defaults.
