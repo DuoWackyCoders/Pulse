@@ -1559,7 +1559,12 @@ async function addStartAddress(label, address, statusEl) {
     if (statusEl) { statusEl.textContent = 'Address saved.'; statusEl.className = 'status-line success'; }
     return entry;
   } catch (e) {
-    if (statusEl) { statusEl.textContent = 'Error looking up that address.'; statusEl.className = 'status-line error'; }
+    // Covers both steps above (lookup AND save) — a generic message here
+    // rather than blaming "lookup" specifically, since the real cause could
+    // be either one and a wrong guess just sends someone troubleshooting
+    // the wrong half of the problem.
+    console.error('Failed to add start address', e);
+    if (statusEl) { statusEl.textContent = 'Something went wrong saving that address — check your connection and try again.'; statusEl.className = 'status-line error'; }
     return null;
   }
 }
@@ -2456,22 +2461,31 @@ function approveWeek() {
 }
 
 function commitApproveWeek() {
-  let totalApproved = 0;
-  weekResults.forEach(day => {
-    if (day.offDay || day.error || !day.stops || day.stops.length === 0) return;
-    const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
-    recordApprovedSchedule(day.date, day.stops, {
-      totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
-      returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
-      totalMiles
+  // If any single day throws partway through, the loop below stops right
+  // there — some days approved, some not, with no message explaining why.
+  // Same principle as the daily approve fix: this is the entire point of
+  // the app, so a failure here must always at least say so.
+  try {
+    let totalApproved = 0;
+    weekResults.forEach(day => {
+      if (day.offDay || day.error || !day.stops || day.stops.length === 0) return;
+      const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
+      recordApprovedSchedule(day.date, day.stops, {
+        totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
+        returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
+        totalMiles
+      });
+      day.stops.forEach(s => recomputeLastVisitDate(s.id));
+      totalApproved += day.stops.length;
     });
-    day.stops.forEach(s => recomputeLastVisitDate(s.id));
-    totalApproved += day.stops.length;
-  });
-  savePatients();
-  renderTable();
-  setWeekStatus(`Approved the week — ${totalApproved} patient visit(s) across the days that generated successfully. Check the Home tab calendar.`, 'success');
-  document.getElementById('approveWeekBtn').style.display = 'none';
+    savePatients();
+    renderTable();
+    setWeekStatus(`Approved the week — ${totalApproved} patient visit(s) across the days that generated successfully. Check the Home tab calendar.`, 'success');
+    document.getElementById('approveWeekBtn').style.display = 'none';
+  } catch (e) {
+    console.error('commitApproveWeek failed', e);
+    setWeekStatus('Something went wrong approving the week — some days may not have saved. Check the Home tab calendar, and re-approve any day that\'s missing.', 'error');
+  }
 }
 
 function cancelWeek() {
@@ -3732,22 +3746,27 @@ function approveMonth() {
 }
 
 function commitApproveMonth() {
-  let totalApproved = 0;
-  monthResults.forEach(day => {
-    if (day.emptyGroup || !day.stops || day.stops.length === 0) return;
-    const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
-    recordApprovedSchedule(day.date, day.stops, {
-      totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
-      returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
-      totalMiles
+  try {
+    let totalApproved = 0;
+    monthResults.forEach(day => {
+      if (day.emptyGroup || !day.stops || day.stops.length === 0) return;
+      const totalMiles = day.stops.reduce((sum, s) => sum + (s.travelMiles || 0), 0) + (day.returnTripMiles || 0);
+      recordApprovedSchedule(day.date, day.stops, {
+        totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
+        returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
+        totalMiles
+      });
+      day.stops.forEach(s => recomputeLastVisitDate(s.id));
+      totalApproved += day.stops.length;
     });
-    day.stops.forEach(s => recomputeLastVisitDate(s.id));
-    totalApproved += day.stops.length;
-  });
-  savePatients();
-  renderTable();
-  setMonthStatus(`Approved the month — ${totalApproved} patient visit(s) scheduled. Check the Home tab calendar.`, 'success');
-  document.getElementById('approveMonthBtn').style.display = 'none';
+    savePatients();
+    renderTable();
+    setMonthStatus(`Approved the month — ${totalApproved} patient visit(s) scheduled. Check the Home tab calendar.`, 'success');
+    document.getElementById('approveMonthBtn').style.display = 'none';
+  } catch (e) {
+    console.error('commitApproveMonth failed', e);
+    setMonthStatus('Something went wrong approving the month — some days may not have saved. Check the Home tab calendar, and re-approve any day that\'s missing.', 'error');
+  }
 }
 
 function cancelMonth() {
@@ -4572,8 +4591,19 @@ async function recalcAndRender() {
     totalHours, dayStartMinutes, returnHomeMinutes, returnTripMinutes, returnTripMiles,
     usingRealRoads, totalMiles: totalDriveMiles
   };
-  renderScheduleLists();
-  renderMap();
+  // The actual schedule (times, order, who's on it) is already fully
+  // computed above — everything past this point is just the on-screen
+  // preview. handleApproveClick() calls this with no try/catch of its own
+  // and relies on getting totalHours back to actually save anything, so a
+  // failure here (Leaflet blocked by an ad-blocker, a flaky CDN, whatever)
+  // must never be allowed to silently break Approve — it would otherwise
+  // fail the whole function with no error shown and nothing saved.
+  try {
+    renderScheduleLists();
+    renderMap();
+  } catch (e) {
+    console.error('Route preview failed to render (the schedule itself is unaffected)', e);
+  }
   return totalHours;
 }
 
@@ -4817,6 +4847,19 @@ function wireScheduleUI() {
   });
 
   async function handleApproveClick() {
+    try {
+      await handleApproveClickInner();
+    } catch (e) {
+      // Without this, any unexpected failure here fails the click silently
+      // — no saved schedule, no error message, nothing for the person to
+      // go on. Approving a day is the entire point of the app; it should
+      // never fail without at least saying so.
+      console.error('Approve failed', e);
+      setScheduleStatus('Something went wrong approving this schedule — nothing was saved. Try again, and if it keeps happening, use the feedback box in About.', 'error');
+    }
+  }
+
+  async function handleApproveClickInner() {
     const maxHours = parseFloat(document.getElementById('maxHours').value) || 7;
     const totalHours = await recalcAndRender();
     const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
