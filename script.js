@@ -5470,18 +5470,29 @@ function renderCalendar() {
   const schedules = loadSchedules();
   const firstDow = new Date(y, m, 1).getDay();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const daysInPrevMonth = new Date(y, m, 0).getDate();
   const todayKey = dateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
 
   const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html = dows.map(d => `<div class="cal-dow">${d}</div>`).join('');
 
-  for (let i = 0; i < firstDow; i++) html += `<div class="cal-day cal-empty"></div>`;
+  // Fill the whole grid to a multiple of 7 with real adjacent-month dates
+  // (dimmed, but still clickable/droppable) instead of blank cells — so a
+  // month that starts on a Friday or ends on a Monday still shows a full
+  // week, and she can see (or drag onto) the handful of days that spill
+  // into last/next month's view.
+  const trailingCount = (7 - ((firstDow + daysInMonth) % 7)) % 7;
+  const prevM = m === 0 ? 11 : m - 1;
+  const prevY = m === 0 ? y - 1 : y;
+  const nextM = m === 11 ? 0 : m + 1;
+  const nextY = m === 11 ? y + 1 : y;
 
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key = dateKey(y, m, d);
+  const renderDayCell = (cellY, cellM, d, isOtherMonth) => {
+    const key = dateKey(cellY, cellM, d);
     const dayList = schedules[key];
     const count = dayList ? dayList.length : 0;
     const classes = ['cal-day'];
+    if (isOtherMonth) classes.push('cal-day-other-month');
     if (count > 0) classes.push('cal-has-schedule');
     if (key === todayKey) classes.push('cal-today');
 
@@ -5496,17 +5507,22 @@ function renderCalendar() {
       }
     }
 
-    html += `
+    return `
       <div class="${classes.join(' ')}" data-date="${key}" draggable="${count > 0}" ${styleAttr}>
         <span class="cal-day-num">${d}</span>
         ${count > 0 ? `<span class="cal-day-count">${count}</span>` : ''}
         ${dotsHtml}
       </div>
     `;
-  }
+  };
+
+  for (let i = 0; i < firstDow; i++) html += renderDayCell(prevY, prevM, daysInPrevMonth - firstDow + 1 + i, true);
+  for (let d = 1; d <= daysInMonth; d++) html += renderDayCell(y, m, d, false);
+  for (let d = 1; d <= trailingCount; d++) html += renderDayCell(nextY, nextM, d, true);
+
   grid.innerHTML = html;
 
-  const dayCells = grid.querySelectorAll('.cal-day:not(.cal-empty)');
+  const dayCells = grid.querySelectorAll('.cal-day');
   dayCells.forEach(cell => {
     cell.addEventListener('click', () => showCalendarDay(cell.getAttribute('data-date')));
 
