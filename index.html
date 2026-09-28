@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260926g">
+<link rel="stylesheet" href="style.css?v=20260926h">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -188,7 +188,6 @@
           <button id="calPrevBtn" class="btn btn-secondary" type="button">◀ Prev</button>
           <button id="calTodayBtn" class="btn btn-ghost" type="button">Today</button>
           <button id="calNextBtn" class="btn btn-secondary" type="button">Next ▶</button>
-          <button id="exportMonthBtn" class="btn btn-secondary" type="button">⬇️ Export Month CSV</button>
         </div>
       </div>
       <div id="calendarGrid" class="calendar-grid"></div>
@@ -319,7 +318,6 @@
       </div>
       <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
         <button id="approveScheduleBtn" class="btn btn-primary" type="button">✅ Approve schedule</button>
-        <button id="exportScheduleCsvBtn" class="btn btn-secondary" type="button">⬇️ Download CSV (for DrChrono)</button>
       </div>
     </section>
     </div>
@@ -426,7 +424,6 @@
         <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
           <button id="generateMonthBtn" class="btn btn-primary" type="button">Generate Month</button>
           <button id="approveMonthBtn" class="btn btn-primary" type="button" style="display:none;">✅ Approve Whole Month</button>
-          <button id="exportApprovedMonthBtn" class="btn btn-secondary" type="button">⬇️ Export This Month's Approved CSV</button>
           <button id="undoMonthBtn" class="btn btn-secondary" type="button" disabled>↩️ Undo</button>
           <button id="undoAllMonthBtn" class="btn btn-secondary" type="button" disabled>⏮️ Undo All (back to generation)</button>
           <button id="cancelMonthBtn" class="btn btn-ghost" type="button">✖ Cancel / Reset</button>
@@ -464,8 +461,6 @@
       <div class="modal-sticky-footer">
         <button id="dayDetailBack" class="btn btn-secondary" type="button">← Back to Calendar</button>
         <button id="dayDetailGoogleMapsBtn" class="btn btn-secondary" type="button">🗺️ Open in Google Maps</button>
-        <button id="exportDayBtn" class="btn btn-secondary" type="button">⬇️ Export Day CSV</button>
-        <button id="exportWeekBtn" class="btn btn-secondary" type="button">⬇️ Export Week CSV</button>
         <button id="cancelDayScheduleBtn" class="btn btn-tiny btn-tiny-danger" type="button" style="padding:10px 14px; font-size:0.85rem;">🗑️ Cancel This Day</button>
         <button id="cancelWeekScheduleBtn" class="btn btn-tiny btn-tiny-danger" type="button" style="padding:10px 14px; font-size:0.85rem;">🗑️ Cancel This Week</button>
         <button id="cancelMonthScheduleBtn" class="btn btn-tiny btn-tiny-danger" type="button" style="padding:10px 14px; font-size:0.85rem;">🗑️ Cancel This Month</button>
@@ -750,7 +745,7 @@
         <div class="about-item">
           <div class="about-emoji">📅</div>
           <h3>Remembers everything</h3>
-          <p>Every approved day lands on a calendar you can look back on, drag to reschedule, or export straight into your EHR system.</p>
+          <p>Every approved day lands on a calendar you can look back on and drag to reschedule.</p>
         </div>
         <div class="about-item">
           <div class="about-emoji">🔔</div>
@@ -773,7 +768,6 @@
         <strong>2. Check groups</strong> on the Clients tab — PULSE clusters automatically, or draw your own.
         <strong>3. Build a route</strong> on the Schedule tab — pick a group, set your stop count, generate.
         <strong>4. Approve</strong> the day when it looks right, and it lands on your Calendar.
-        <strong>5. Export</strong> whenever you need a clean list for billing or your EHR.
       </p>
     </section>
 
@@ -952,9 +946,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260926g"></script>
-<script src="auth.js?v=20260926g"></script>
-<script src="data.js?v=20260926g"></script>
-<script src="script.js?v=20260926g"></script>
+<script src="supabase-config.js?v=20260926h"></script>
+<script src="auth.js?v=20260926h"></script>
+<script src="data.js?v=20260926h"></script>
+<script src="script.js?v=20260926h"></script>
 </body>
 </html>
