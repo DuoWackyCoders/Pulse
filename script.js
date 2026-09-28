@@ -2603,7 +2603,9 @@ function commitApproveWeek() {
       recordApprovedSchedule(day.date, day.stops, {
         totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
         returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
-        totalMiles
+        totalMiles,
+        startLat: weekStartCoordsGlobal ? weekStartCoordsGlobal.lat : null,
+        startLng: weekStartCoordsGlobal ? weekStartCoordsGlobal.lng : null
       });
       day.stops.forEach(s => recomputeLastVisitDate(s.id));
       totalApproved += day.stops.length;
@@ -3896,7 +3898,9 @@ function commitApproveMonth() {
       recordApprovedSchedule(day.date, day.stops, {
         totalHours: day.totalHours, dayStartMinutes: day.dayStartMinutes, returnHomeMinutes: day.returnHomeMinutes,
         returnTripMinutes: day.returnTripMinutes, returnTripMiles: day.returnTripMiles, usingRealRoads: day.usingRealRoads,
-        totalMiles
+        totalMiles,
+        startLat: monthStartCoordsGlobal ? monthStartCoordsGlobal.lat : null,
+        startLng: monthStartCoordsGlobal ? monthStartCoordsGlobal.lng : null
       });
       day.stops.forEach(s => recomputeLastVisitDate(s.id));
       totalApproved += day.stops.length;
@@ -4716,7 +4720,12 @@ async function recalcAndRender() {
   const totalHours = (cursorMinutes - dayStartMinutes) / 60;
   lastDailyRouteSummary = {
     totalHours, dayStartMinutes, returnHomeMinutes, returnTripMinutes, returnTripMiles,
-    usingRealRoads, totalMiles: totalDriveMiles
+    usingRealRoads, totalMiles: totalDriveMiles,
+    // The actual starting address used, so reopening this day later (e.g.
+    // the morning of, from the calendar) can send her to Google Maps from
+    // where she really starts — not just whichever saved address happens
+    // to be first in the list.
+    startLat: startCoords ? startCoords.lat : null, startLng: startCoords ? startCoords.lng : null
   };
   // The actual schedule (times, order, who's on it) is already fully
   // computed above — everything past this point is just the on-screen
@@ -5632,8 +5641,20 @@ window.openCalendarDayInGoogleMaps = function (dateStr) {
   const destination = `${resolved[resolved.length - 1].lat},${resolved[resolved.length - 1].lng}`;
   let origin, waypointStops;
 
-  if (savedAddrs.length > 0) {
-    origin = `${savedAddrs[0].lat},${savedAddrs[0].lng}`;
+  // The address actually used to build this day's route, saved at approve
+  // time — not just "whichever saved address loads first," which could
+  // send her to the wrong starting point on the one screen she opens every
+  // single working morning to get directions. Falls back to her saved
+  // default home base, then the first saved address, only for older days
+  // approved before this was tracked.
+  const summary = scheduleDaySummaries[dateStr];
+  const homeAddr = savedAddrs.find(a => a.id === userSettings.home_address_id);
+  const startPoint = (summary && summary.startLat != null && summary.startLng != null)
+    ? { lat: summary.startLat, lng: summary.startLng }
+    : homeAddr || savedAddrs[0] || null;
+
+  if (startPoint) {
+    origin = `${startPoint.lat},${startPoint.lng}`;
     waypointStops = resolved.slice(0, -1);
   } else {
     origin = `${resolved[0].lat},${resolved[0].lng}`;
