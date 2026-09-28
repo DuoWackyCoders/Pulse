@@ -2074,6 +2074,7 @@ function renderWeekDayCards() {
   }
   const monday = mondayOf(startInput.value);
 
+  const defaultStopCount = userSettings.stop_count || 8;
   let html = '';
   for (let i = 0; i < 5; i++) {
     const d = new Date(monday);
@@ -2093,13 +2094,13 @@ function renderWeekDayCards() {
           <div class="wdc-fields" style="display:none;">
             <select class="wdc-group">${groupSelectOptionsHtml()}</select>
             <select class="wdc-group2"><option value="">+ Also include (optional)</option>${groupSelectOptionsHtml()}</select>
-            <input type="number" class="wdc-count" min="1" value="8" placeholder="Stops">
+            <input type="number" class="wdc-count" min="1" value="${defaultStopCount}" placeholder="Stops">
           </div>
         ` : `
           <div class="wdc-fields">
             <select class="wdc-group">${groupSelectOptionsHtml()}</select>
             <select class="wdc-group2"><option value="">+ Also include (optional)</option>${groupSelectOptionsHtml()}</select>
-            <input type="number" class="wdc-count" min="1" value="8" placeholder="Stops">
+            <input type="number" class="wdc-count" min="1" value="${defaultStopCount}" placeholder="Stops">
           </div>
         `}
       </div>
