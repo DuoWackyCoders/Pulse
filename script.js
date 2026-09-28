@@ -4517,21 +4517,6 @@ function wireMonthlyUI() {
   document.getElementById('approveMonthBtn').addEventListener('click', approveMonth);
   document.getElementById('cancelMonthBtn').addEventListener('click', cancelMonth);
   document.getElementById('monthPicker').addEventListener('change', renderMonthWeekPatternRows);
-  document.getElementById('exportApprovedMonthBtn').addEventListener('click', () => {
-    const monthVal = document.getElementById('monthPicker').value;
-    if (!monthVal) { setMonthStatus('Pick a month first.', 'error'); return; }
-    const [y, m] = monthVal.split('-').map(Number);
-    const schedules = loadSchedules();
-    const entries = [];
-    Object.keys(schedules).forEach(dateStr => {
-      const d = new Date(dateStr + 'T00:00:00');
-      if (d.getFullYear() === y && d.getMonth() === m - 1) {
-        schedules[dateStr].forEach(p => entries.push({ ...p, date: dateStr }));
-      }
-    });
-    if (entries.length === 0) { setMonthStatus(`No approved schedule found for ${monthVal} — generate and approve first.`, 'error'); return; }
-    downloadScheduleCsv(entries, `schedule-${monthVal}.csv`);
-  });
   document.getElementById('undoMonthBtn').addEventListener('click', window.undoMonthChange);
   document.getElementById('undoAllMonthBtn').addEventListener('click', window.undoAllMonthChanges);
 }
@@ -5000,28 +4985,6 @@ function wireScheduleUI() {
     document.getElementById(id).addEventListener('change', (e) => {
       if (e.target.value) saveUserSettings({ home_address_id: e.target.value });
     });
-  });
-
-  document.getElementById('exportScheduleCsvBtn').addEventListener('click', () => {
-    if (scheduledPatients.length === 0) { setScheduleStatus('Generate a route first.', 'error'); return; }
-    const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
-    const header = ['Name', 'DOB', 'Date', 'Time', 'Provider'];
-    const escape = (v) => {
-      const s = (v ?? '').toString();
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    const lines = [header.join(',')];
-    scheduledPatients.forEach(p => {
-      lines.push([p.name, p.dob, scheduleDate, minutesToClock(p.arrivalMinutes), p.provider || '']
-        .map(escape).join(','));
-    });
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `schedule-${scheduleDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   });
 
   async function handleApproveClick() {
@@ -6003,84 +5966,6 @@ function commitPatientDateChange() {
   pendingDateChange = null;
 }
 
-function downloadScheduleCsv(entries, filename) {
-  if (entries.length === 0) { alert('Nothing to export for that range.'); return; }
-  const header = ['Name', 'DOB', 'Date', 'Time', 'Provider'];
-  const escape = (v) => {
-    const s = (v ?? '').toString();
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  };
-
-  // Group by date (each date's stops stay in their existing visit order),
-  // sorted chronologically, with a blank line between days for readability.
-  const byDate = {};
-  entries.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
-  const dates = Object.keys(byDate).sort();
-
-  const lines = [header.join(',')];
-  dates.forEach((date, dIdx) => {
-    if (dIdx > 0) lines.push('');
-    const dayEntries = byDate[date];
-    // Simplified hourly slots for the coordinator: first stop's real time
-    // rounded down to the hour, then +1 hour per stop after that — the
-    // precise real-road times still show inside PULSE itself, this export
-    // is just easier to scan at a glance.
-    const baseMinutes = dayEntries[0].arrivalMinutes !== undefined
-      ? Math.floor(dayEntries[0].arrivalMinutes / 60) * 60
-      : 8 * 60; // fallback: 8:00 AM if no time data
-    dayEntries.forEach((e, i) => {
-      const slotMinutes = baseMinutes + i * 60;
-      lines.push([e.name, e.dob, e.date, minutesToClock(slotMinutes), e.provider || ''].map(escape).join(','));
-    });
-  });
-
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportMonthSchedule() {
-  const y = calendarViewDate.getFullYear();
-  const m = calendarViewDate.getMonth();
-  const schedules = loadSchedules();
-  const entries = [];
-  Object.keys(schedules).forEach(dateStr => {
-    const d = new Date(dateStr + 'T00:00:00');
-    if (d.getFullYear() === y && d.getMonth() === m) {
-      schedules[dateStr].forEach(p => entries.push({ ...p, date: dateStr }));
-    }
-  });
-  downloadScheduleCsv(entries, `schedule-${y}-${String(m + 1).padStart(2, '0')}.csv`);
-}
-
-function exportWeekSchedule(anchorDateStr) {
-  const anchor = new Date(anchorDateStr + 'T00:00:00');
-  const dow = anchor.getDay(); // 0=Sun..6=Sat
-  const daysSinceMonday = dow === 0 ? 6 : dow - 1;
-  const monday = new Date(anchor);
-  monday.setDate(anchor.getDate() - daysSinceMonday);
-  const schedules = loadSchedules();
-  const entries = [];
-  for (let i = 0; i < 5; i++) { // Mon-Fri only
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
-    if (schedules[key]) schedules[key].forEach(p => entries.push({ ...p, date: key }));
-  }
-  const weekLabel = dateKey(monday.getFullYear(), monday.getMonth(), monday.getDate());
-  downloadScheduleCsv(entries, `schedule-week-of-${weekLabel}.csv`);
-}
-
-function exportDaySchedule(dateStr) {
-  const schedules = loadSchedules();
-  const entries = (schedules[dateStr] || []).map(p => ({ ...p, date: dateStr }));
-  downloadScheduleCsv(entries, `schedule-${dateStr}.csv`);
-}
-
 function wireCalendarUI() {
   document.getElementById('calPrevBtn').addEventListener('click', () => {
     calendarViewDate.setMonth(calendarViewDate.getMonth() - 1);
@@ -6099,17 +5984,6 @@ function wireCalendarUI() {
   });
   document.getElementById('dayDetailCloseX').addEventListener('click', () => {
     document.getElementById('dayDetailModal').style.display = 'none';
-  });
-  document.getElementById('exportMonthBtn').addEventListener('click', exportMonthSchedule);
-  document.getElementById('exportDayBtn').addEventListener('click', () => {
-    const modal = document.getElementById('dayDetailModal');
-    const dateStr = modal.getAttribute('data-current-date');
-    if (dateStr) exportDaySchedule(dateStr);
-  });
-  document.getElementById('exportWeekBtn').addEventListener('click', () => {
-    const modal = document.getElementById('dayDetailModal');
-    const dateStr = modal.getAttribute('data-current-date');
-    if (dateStr) exportWeekSchedule(dateStr);
   });
   document.getElementById('dayDetailGoogleMapsBtn').addEventListener('click', () => {
     const modal = document.getElementById('dayDetailModal');
