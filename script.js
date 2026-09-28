@@ -466,22 +466,40 @@ async function geocodeAllPending() {
   if (pending.length === 0) return;
 
   setStatus(`Geocoding ${pending.length} address(es)... this may take a moment.`, '');
+  const failedNames = [];
   for (let i = 0; i < pending.length; i++) {
     const p = pending[i];
     try {
       const coords = await geocodeAddress(p.address);
-      if (coords) { p.lat = coords.lat; p.lng = coords.lng; }
-      else { p.geocodeFailed = true; }
+      if (coords) { p.lat = coords.lat; p.lng = coords.lng; p.geocodeFailed = false; }
+      else { p.geocodeFailed = true; failedNames.push(p.name); }
     } catch (e) {
       console.error('Geocode failed for', p.address, e);
       p.geocodeFailed = true;
+      failedNames.push(p.name);
     }
     setStatus(`Geocoding ${i + 1} of ${pending.length}...`, '');
     await sleep(1100); // stay under 1 req/sec
   }
   savePatients();
-  regroup();
-  setStatus('Geocoding complete.', 'success');
+  try {
+    regroup();
+  } catch (e) {
+    // regroup() also redraws the Clients map — a rendering hiccup there
+    // (e.g. the map tile CDN having a bad moment) should never swallow the
+    // geocoding results she's waiting on below.
+    console.error('regroup() failed after geocoding', e);
+  }
+  // A patient whose address didn't geocode has no lat/lng, so they're
+  // invisible on the map and never show up on a generated route — without
+  // calling that out explicitly here, the only sign is a small "(not
+  // found)" tag she'd have to spot while scrolling the Clients table.
+  if (failedNames.length > 0) {
+    const list = failedNames.slice(0, 5).join(', ') + (failedNames.length > 5 ? `, +${failedNames.length - 5} more` : '');
+    setStatus(`Geocoding complete — ${pending.length - failedNames.length} of ${pending.length} found. ⚠️ Couldn't find an address for: ${list}. They won't show up on any route until you fix their address on the Clients tab (tagged "not found") — click Edit to correct it and re-geocode.`, 'error');
+  } else {
+    setStatus('Geocoding complete.', 'success');
+  }
 }
 
 /* ============================================
