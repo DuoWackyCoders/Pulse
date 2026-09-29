@@ -583,47 +583,30 @@ function splitManualOutliers(units) {
   return result;
 }
 
-function regroup() {
-  // Keep manually-assigned patients fixed (this includes anything you drew
-  // and assigned on the map). Auto-cluster only what's left.
-  const manual = patients.filter(p => p.manualGroup && p.group);
-  const auto = patients.filter(p => !p.manualGroup && p.lat !== null && p.lng !== null);
-  const noCoords = patients.filter(p => p.lat === null || p.lng === null);
+const GROUP_MAX_SPREAD_MILES = 8; // stop growing a group rather than force in a distant outlier
+const GROUP_OVERFLOW_TOLERANCE = 3; // let the cleanup pass slightly exceed the cap when a patient is CLEARLY closer to that group than any other
 
-  const usedLabels = new Set(manual.map(p => p.group));
-  let nextIdx = 0;
-  const nextFreeLetter = () => {
-    let letter;
-    do { letter = groupLetter(nextIdx++); } while (usedLabels.has(letter));
-    usedLabels.add(letter);
-    return letter;
-  };
-
-  const MAX_SPREAD_MILES = 8; // stop growing a group rather than force in a distant outlier
-  const OVERFLOW_TOLERANCE = 3; // let the cleanup pass slightly exceed the cap when a patient is CLEARLY closer to that group than any other
-
-  // Same-address patients are ALWAYS kept together as one atomic unit
-  // throughout clustering — a unit of 14 people at one building moves as a
-  // single block, never split across groups, even if that means a group
-  // ends up well over the requested size. This is the fix for two people
-  // at the same address (e.g. a married couple) ending up in different
-  // groups just because of where the greedy growth happened to be when it
-  // reached each of them individually.
-  const units = buildLocationUnits(auto);
-  const unitCentroid = (unit) => ({
+function groupUnitCentroid(unit) {
+  return {
     lat: unit.reduce((s, m) => s + m.lat, 0) / unit.length,
     lng: unit.reduce((s, m) => s + m.lng, 0) / unit.length
-  });
+  };
+}
 
-  // No radius, no home anchor — keep grabbing the nearest remaining unit
-  // to the cluster's CENTER (not the last one added), until the group hits
-  // the size cap, runs out of units, OR the nearest remaining unit is
-  // farther than a sane spread — better to leave a group smaller than to
-  // stretch it across the map just to hit the count.
-  //
-  // When a cluster fills up (or stops early), the NEXT cluster's seed is
-  // whichever unclustered unit is nearest to where we just left off —
-  // turning this into a spatial sweep instead of a random jump.
+// Builds groups from scratch for a set of units that have no prior group
+// assignment at all — the fresh-upload / "Reset all to auto-grouping"
+// case, where there's no existing layout to respect yet. No radius, no
+// home anchor — keep grabbing the nearest remaining unit to the cluster's
+// CENTER (not the last one added), until the group hits the size cap,
+// runs out of units, OR the nearest remaining unit is farther than a sane
+// spread — better to leave a group smaller than to stretch it across the
+// map just to hit the count. When a cluster fills up (or stops early),
+// the NEXT cluster's seed is whichever unclustered unit is nearest to
+// where we just left off — turning this into a spatial sweep instead of
+// a random jump. Finishes with a cleanup pass that reassigns any UNIT
+// closer to a different group's center than its own, fixing the
+// jagged/interleaved boundaries a one-pass greedy sweep leaves behind.
+function sweepClusterUnits(units, nextFreeLetter) {
   const unclustered = [...units];
   let lastCentroid = null;
   while (unclustered.length) {
@@ -631,7 +614,7 @@ function regroup() {
     if (lastCentroid) {
       let bestIdx = 0, bestDist = Infinity;
       unclustered.forEach((cand, i) => {
-        const c = unitCentroid(cand);
+        const c = groupUnitCentroid(cand);
         const d = haversineMiles(lastCentroid.lat, lastCentroid.lng, c.lat, c.lng);
         if (d < bestDist) { bestDist = d; bestIdx = i; }
       });
@@ -649,11 +632,11 @@ function regroup() {
       const centroidLng = members.reduce((s, m) => s + m.lng, 0) / members.length;
       let bestIdx = 0, bestDist = Infinity;
       unclustered.forEach((cand, i) => {
-        const c = unitCentroid(cand);
+        const c = groupUnitCentroid(cand);
         const d = haversineMiles(centroidLat, centroidLng, c.lat, c.lng);
         if (d < bestDist) { bestDist = d; bestIdx = i; }
       });
-      if (bestDist > MAX_SPREAD_MILES) break; // don't force in a distant outlier
+      if (bestDist > GROUP_MAX_SPREAD_MILES) break; // don't force in a distant outlier
       const nextUnit = unclustered.splice(bestIdx, 1)[0];
       nextUnit.forEach(p => { p.group = letter; });
       members = members.concat(nextUnit);
@@ -665,35 +648,24 @@ function regroup() {
     };
   }
 
-  // Cleanup pass: any UNIT closer to a DIFFERENT group's center than its
-  // own gets reassigned there as a whole, as long as that group still has
-  // room for the whole unit. This fixes jagged/interleaved boundaries left
-  // over from the one-pass greedy sweep above — same as before, just
-  // operating on units instead of individual patients so nothing splits.
   for (let iter = 0; iter < 4; iter++) {
     const byGroup = {};
-    auto.forEach(p => { if (p.group) { (byGroup[p.group] = byGroup[p.group] || []).push(p); } });
+    units.forEach(unit => { const g = unit[0].group; if (g) { (byGroup[g] = byGroup[g] || []).push(...unit); } });
     const centroids = {};
-    Object.keys(byGroup).forEach(g => {
-      const arr = byGroup[g];
-      centroids[g] = {
-        lat: arr.reduce((s, m) => s + m.lat, 0) / arr.length,
-        lng: arr.reduce((s, m) => s + m.lng, 0) / arr.length
-      };
-    });
+    Object.keys(byGroup).forEach(g => { centroids[g] = groupUnitCentroid(byGroup[g]); });
 
     let changed = false;
     units.forEach(unit => {
       const currentGroup = unit[0].group; // every member of a unit always shares one group by construction
       if (!currentGroup || !centroids[currentGroup]) return;
-      const c = unitCentroid(unit);
+      const c = groupUnitCentroid(unit);
       const currentDist = haversineMiles(centroids[currentGroup].lat, centroids[currentGroup].lng, c.lat, c.lng);
       let bestGroup = currentGroup, bestDist = currentDist;
       Object.keys(centroids).forEach(g => {
         if (g === currentGroup) return;
-        if (byGroup[g].length + unit.length > groupSizeMax + OVERFLOW_TOLERANCE) return; // hard ceiling for the WHOLE unit, but allow a little flex
+        if (byGroup[g].length + unit.length > groupSizeMax + GROUP_OVERFLOW_TOLERANCE) return; // hard ceiling for the WHOLE unit, but allow a little flex
         const d = haversineMiles(centroids[g].lat, centroids[g].lng, c.lat, c.lng);
-        if (d > MAX_SPREAD_MILES) return; // never reassign to a group this far away, even if it's the "closest available"
+        if (d > GROUP_MAX_SPREAD_MILES) return; // never reassign to a group this far away, even if it's the "closest available"
         if (d < bestDist) { bestDist = d; bestGroup = g; }
       });
       if (bestGroup !== currentGroup) {
@@ -704,6 +676,89 @@ function regroup() {
       }
     });
     if (!changed) break;
+  }
+}
+
+// Places units that have no group yet onto EXISTING groups without ever
+// moving anyone who's already placed — "once grouping is set, it stays
+// that way no matter what changes or additional addresses are added."
+// A same-address match to an already-placed patient always wins outright
+// (the household/building rule beats plain geography); otherwise a unit
+// joins whichever existing group's center is nearest, within the usual
+// spread and size limits, or starts a brand new group if none fits. New
+// groups formed this way are visible to LATER units in the same pass too,
+// so several new patients added together in the same area still cluster
+// with each other, not just scatter into singletons.
+function placeNewUnitsIntoExistingGroups(units, placed, nextFreeLetter) {
+  const byGroup = {};
+  placed.forEach(p => { (byGroup[p.group] = byGroup[p.group] || []).push(p); });
+
+  units.forEach(unit => {
+    const sameAddrPlaced = placed.find(p => isSameLocation(p, unit[0]));
+    if (sameAddrPlaced) {
+      unit.forEach(p => { p.group = sameAddrPlaced.group; });
+      byGroup[sameAddrPlaced.group].push(...unit);
+      return;
+    }
+
+    const unitC = groupUnitCentroid(unit);
+    let bestGroup = null, bestDist = Infinity;
+    Object.keys(byGroup).forEach(g => {
+      if (byGroup[g].length + unit.length > groupSizeMax + GROUP_OVERFLOW_TOLERANCE) return;
+      const c = groupUnitCentroid(byGroup[g]);
+      const d = haversineMiles(c.lat, c.lng, unitC.lat, unitC.lng);
+      if (d <= GROUP_MAX_SPREAD_MILES && d < bestDist) { bestDist = d; bestGroup = g; }
+    });
+
+    if (bestGroup) {
+      unit.forEach(p => { p.group = bestGroup; });
+      byGroup[bestGroup].push(...unit);
+    } else {
+      const letter = nextFreeLetter();
+      unit.forEach(p => { p.group = letter; });
+      byGroup[letter] = [...unit];
+    }
+  });
+}
+
+function regroup() {
+  // Keep manually-assigned patients fixed (this includes anything you drew
+  // and assigned on the map). Auto-cluster only what's left.
+  const manual = patients.filter(p => p.manualGroup && p.group);
+  const auto = patients.filter(p => !p.manualGroup && p.lat !== null && p.lng !== null);
+  const noCoords = patients.filter(p => p.lat === null || p.lng === null);
+
+  const usedLabels = new Set(manual.map(p => p.group));
+  let nextIdx = 0;
+  const nextFreeLetter = () => {
+    let letter;
+    do { letter = groupLetter(nextIdx++); } while (usedLabels.has(letter));
+    usedLabels.add(letter);
+    return letter;
+  };
+
+  // Already-grouped patients are LOCKED — regrouping never moves them,
+  // no matter what else changes. Only patients with no group yet (brand
+  // new, or newly geocoded after a fix) get placed.
+  const placed = auto.filter(p => p.group);
+  const newcomers = auto.filter(p => !p.group);
+  placed.forEach(p => usedLabels.add(p.group));
+
+  // Same-address patients are ALWAYS kept together as one atomic unit
+  // throughout clustering — a unit of 14 people at one building moves as a
+  // single block, never split across groups, even if that means a group
+  // ends up well over the requested size. This is the fix for two people
+  // at the same address (e.g. a married couple) ending up in different
+  // groups just because of where the greedy growth happened to be when it
+  // reached each of them individually.
+  if (placed.length === 0) {
+    // Nothing placed yet (first upload, or just hit "Reset all to
+    // auto-grouping") — build the best possible layout from scratch.
+    sweepClusterUnits(buildLocationUnits(newcomers), nextFreeLetter);
+  } else {
+    // Some patients already have a settled group — leave them exactly
+    // where they are, and only place the newcomers.
+    placeNewUnitsIntoExistingGroups(buildLocationUnits(newcomers), placed, nextFreeLetter);
   }
 
   noCoords.forEach(p => { if (!p.manualGroup) p.group = null; });
@@ -1055,7 +1110,12 @@ function renderTable() {
       const patient = patients.find(p => p.id === id);
       if (!patient) return;
       if (e.target.value === '') {
+        // Switching back to "Auto" is a request to let the system decide
+        // again, not just freeze them wherever the manual pick left them —
+        // clear their group so regroup() actually re-places this one
+        // patient (everyone else stays exactly where they are).
         patient.manualGroup = false;
+        patient.group = null;
       } else {
         patient.manualGroup = true;
         patient.group = e.target.value;
@@ -5166,7 +5226,16 @@ async function saveEditedPatient() {
   renderTable();
   populateProviderFilter();
   const gotNewCoords = editManualLat !== null && editManualLng !== null;
-  if (addressChanged || gotNewCoords) regroup(); else renderGroupSummary();
+  if (addressChanged || gotNewCoords) {
+    // Their old group may no longer make geographic sense — clear it so
+    // regroup() re-places just this one patient instead of leaving them
+    // locked into a group decided before the address changed. A manual
+    // override is a deliberate choice, though, so it's left untouched.
+    if (!p.manualGroup) p.group = null;
+    regroup();
+  } else {
+    renderGroupSummary();
+  }
 
   if (editManualMap) { editManualMap.remove(); editManualMap = null; }
   editManualLat = null;
@@ -6110,6 +6179,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     groupSizeSlider.addEventListener('change', () => {
       saveGroupSizeMax();
+      // Deliberately changing the max-group-size is a request to re-cluster
+      // with the new size, not an "addition" — unlike a new patient, this
+      // should actually take effect. Manual overrides are untouched (same
+      // as always); only auto-placed patients go back to being re-swept.
+      patients.forEach(p => { if (!p.manualGroup) p.group = null; });
       regroup();
     });
   });
@@ -6117,7 +6191,11 @@ document.addEventListener('DOMContentLoaded', () => {
   safeInit('reset auto group button', () => {
     document.getElementById('resetAutoGroupBtn').addEventListener('click', () => {
       if (!confirm('This clears every manual group assignment (including anything drawn on the map) and re-clusters everyone automatically. Continue?')) return;
-      patients.forEach(p => { p.manualGroup = false; });
+      // Clearing manualGroup alone isn't enough now that regroup() locks
+      // in place anyone who already has a .group — without also clearing
+      // .group here, "reset" would just leave everyone exactly where they
+      // were instead of actually re-clustering from scratch.
+      patients.forEach(p => { p.manualGroup = false; p.group = null; });
       savePatients();
       regroup();
     });
