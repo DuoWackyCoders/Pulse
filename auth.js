@@ -124,6 +124,7 @@ async function checkOrgSetup(session) {
     window.currentOrgId = membership.org_id;
     window.currentOrgRole = membership.role;
     window.currentUserId = session.user.id;
+    window.currentUserEmail = session.user.email;
     // "Viewing as" always starts as yourself — an admin explicitly picks a
     // teammate from here to see the app through their eyes instead.
     window.viewingAsUserId = null;
@@ -161,6 +162,8 @@ async function handleCreateOrg() {
 
   window.currentOrgId = newOrgId;
   window.currentOrgRole = 'admin';
+  window.currentUserId = session.user.id;
+  window.currentUserEmail = session.user.email;
   showApp(session);
 }
 
