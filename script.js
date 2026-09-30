@@ -2784,9 +2784,13 @@ function populateViewingAsSelect() {
   if (!field || !sel) return;
   const isAdmin = window.currentOrgRole === 'admin';
   const others = teamMembers.filter(m => m.user_id !== window.currentUserId);
+  // Nothing to show unless she actually manages other people on the team —
+  // a solo provider (or anyone with no one reporting to them) gets no
+  // dropdown at all, not an empty/confusing one.
   field.style.display = (isAdmin && others.length > 0) ? '' : 'none';
   if (!isAdmin) return;
-  sel.innerHTML = '<option value="">Myself</option>' +
+  const myself = window.currentUserEmail || 'Myself';
+  sel.innerHTML = `<option value="">${escapeHtml(myself)}</option>` +
     others.map(m => `<option value="${escapeAttr(m.user_id)}" ${m.user_id === window.viewingAsUserId ? 'selected' : ''}>${escapeHtml(m.email)} (${escapeHtml(m.role)})</option>`).join('');
 }
 
