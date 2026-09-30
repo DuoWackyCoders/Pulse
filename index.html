@@ -19,7 +19,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260926j">
+<link rel="stylesheet" href="style.css?v=20260926k">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -273,7 +273,7 @@
 
       <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
         <input type="checkbox" id="includeRecent" style="width:16px; height:16px;">
-        Include patients visited in the last 30 days (manual override — e.g. vacation reschedule)
+        Include patients seen within the last month (manual override — e.g. vacation reschedule)
       </label>
 
       <button id="generateRouteBtn" class="btn btn-primary" type="button" style="margin-top:16px;">Generate Route</button>
@@ -295,7 +295,7 @@
       <div id="routeSummary" class="route-summary"></div>
       <div id="myMapsHelp" class="status-line" style="display:none;"></div>
       <div id="routeMap" class="route-map"></div>
-      <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (not on route) • 🩷 Unavailable (visited in last 30 days)</p>
+      <p class="card-subtitle" style="margin-top:8px;">🏠 Home • 📍 Scheduled stop • 🟢 Available (not on route) • 🩷 Unavailable (not yet due)</p>
 
       <div id="approveTopBar" style="display:flex; gap:10px; margin:14px 0; flex-wrap:wrap;">
         <button id="approveScheduleBtnTop" class="btn btn-primary" type="button">✅ Approve schedule</button>
@@ -352,7 +352,7 @@
         </div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
           <input type="checkbox" id="weekIncludeRecent" style="width:16px; height:16px;">
-          Include patients visited in the last 30 days (manual override)
+          Include patients seen within the last month (manual override)
         </label>
 
         <div class="work-days-row">
@@ -415,7 +415,7 @@
         </div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-family: var(--font-body); font-weight:600; font-size:0.85rem; color: var(--text-soft);">
           <input type="checkbox" id="monthIncludeRecent" style="width:16px; height:16px;">
-          Include patients visited in the last 30 days (manual override)
+          Include patients seen within the last month (manual override)
         </label>
 
         <p class="card-subtitle" style="margin-top:14px;">Each week in the month gets its own work days — pick the month above, then set each week below. Starts pre-filled from your usual pattern, adjust any week that's different.</p>
@@ -749,8 +749,8 @@
         </div>
         <div class="about-item">
           <div class="about-emoji">🔔</div>
-          <h3>Watches the 30-day clock</h3>
-          <p>PULSE tracks who's due for a visit and flags anyone approaching or past 30 days since their last one — so nobody falls through the cracks.</p>
+          <h3>Watches the monthly due-date clock</h3>
+          <p>PULSE tracks when everyone's next visit is due — a real calendar month after their last one, not a flat day count — and flags anyone due or coming up soon, so nobody falls through the cracks.</p>
         </div>
       </div>
     </section>
@@ -946,9 +946,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=20260926j"></script>
-<script src="auth.js?v=20260926j"></script>
-<script src="data.js?v=20260926j"></script>
-<script src="script.js?v=20260926j"></script>
+<script src="supabase-config.js?v=20260926k"></script>
+<script src="auth.js?v=20260926k"></script>
+<script src="data.js?v=20260926k"></script>
+<script src="script.js?v=20260926k"></script>
 </body>
 </html>

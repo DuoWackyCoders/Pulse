@@ -806,10 +806,15 @@ function lastVisitCellHtml(p) {
   }
   const today = new Date();
   const daysSince = Math.floor((today - last) / 86400000);
-  if (daysSince >= 30) {
+  // Same due-date rule the scheduler itself uses (isRecentlyVisited) — a
+  // calendar month after the visit, not a flat day count — so this badge
+  // never disagrees with who actually shows up as eligible to schedule.
+  const dueDate = addOneCalendarMonth(p.lastVisitDate);
+  const daysUntilDue = Math.ceil((dueDate - today) / 86400000);
+  if (daysUntilDue <= 0) {
     return `${escapeHtml(p.lastVisitDate)}<br><span class="due-badge due-overdue">${daysSince}d — Due</span>`;
   }
-  if (daysSince >= 23) {
+  if (daysUntilDue <= 7) {
     return `${escapeHtml(p.lastVisitDate)}<br><span class="due-badge due-soon">${daysSince}d — Due Soon</span>`;
   }
   return `${escapeHtml(p.lastVisitDate)}<br><span class="due-badge due-ok">${daysSince}d ago</span>`;
@@ -1479,7 +1484,11 @@ function renderMap() {
     const ineligible = !includeRecentForMap && isRecentlyVisited(p, scheduleDateForMap);
     const icon = ineligible ? ghostIconIneligible : ghostIconEligible;
     const popup = ineligible
-      ? `${escapeHtml(p.name)} (Group ${escapeHtml(p.group || '—')})<br><span style="color:var(--text-soft); font-size:0.8rem;">Recently visited (${escapeHtml(p.lastVisitDate || '')}) — not eligible for 30 days</span>`
+      ? (() => {
+          const due = addOneCalendarMonth(p.lastVisitDate);
+          const dueStr = dateKey(due.getFullYear(), due.getMonth(), due.getDate());
+          return `${escapeHtml(p.name)} (Group ${escapeHtml(p.group || '—')})<br><span style="color:var(--text-soft); font-size:0.8rem;">Recently visited (${escapeHtml(p.lastVisitDate || '')}) — not due again until ${escapeHtml(dueStr)}</span>`;
+        })()
       : `${escapeHtml(p.name)} (Group ${escapeHtml(p.group || '—')})<br>
          <div style="margin-top:6px; display:flex; gap:6px;">
            <button type="button" style="flex:1; font-size:0.8rem; padding:4px 6px;" onclick="window.addPatientToLeftover('${p.id}')">+ Leftover</button>
@@ -1565,7 +1574,7 @@ window.addPatientToScheduleDirectly = async function (patientId) {
   const includeRecent = document.getElementById('includeRecent').checked;
   const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
   if (!includeRecent && isRecentlyVisited(p, scheduleDate)) {
-    alert(`${p.name} was visited within the last 30 days. Check "Include patients visited in the last 30 days" to add them anyway.`);
+    alert(`${p.name} was visited within the last month. Check "Include patients seen within the last month" to add them anyway.`);
     return;
   }
 
@@ -1599,7 +1608,7 @@ window.addPatientToLeftover = function (patientId) {
   const includeRecent = document.getElementById('includeRecent').checked;
   const scheduleDate = document.getElementById('scheduleDate').value || new Date().toISOString().slice(0, 10);
   if (!includeRecent && isRecentlyVisited(p, scheduleDate)) {
-    alert(`${p.name} was visited within the last 30 days. Check "Include patients visited in the last 30 days" to add them anyway.`);
+    alert(`${p.name} was visited within the last month. Check "Include patients seen within the last month" to add them anyway.`);
     return;
   }
 
@@ -1897,12 +1906,28 @@ function isSameLocation(a, b) {
   return false;
 }
 
+// One calendar month after a date, clamped to the target month's last day
+// when the original day doesn't exist there (Jan 31 -> Feb 28, not Mar 3,
+// same convention as a monthly subscription renewal). "Due monthly" means
+// this, not a fixed 30-day window — a Feb 1 visit is due again Mar 1, a
+// 28-day gap, and a Jan 31 visit is due again Feb 28/29, not "whenever 30
+// days have passed."
+function addOneCalendarMonth(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const day = d.getDate();
+  const targetYear = y + Math.floor((m + 1) / 12);
+  const targetMonth = (m + 1) % 12;
+  const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(day, daysInTargetMonth));
+}
+
 function isRecentlyVisited(patient, asOfDateStr) {
   if (!patient.lastVisitDate) return false;
   const asOf = new Date(asOfDateStr + 'T00:00:00');
-  const last = new Date(patient.lastVisitDate + 'T00:00:00');
-  const daysSince = Math.floor((asOf - last) / 86400000);
-  return daysSince < 30;
+  const dueDate = addOneCalendarMonth(patient.lastVisitDate);
+  return asOf < dueDate;
 }
 
 /**
@@ -1930,7 +1955,7 @@ function selectRoutePatients({ group, group2, stopCount, startCoords, scheduleDa
     groupOnlyCount = groupPatients.length;
     if (groupPatients.length === 0) {
       return { error: excludedCount > 0
-        ? `All patients in ${group2 ? 'those groups' : 'that group'} were visited within the last 30 days (or already used elsewhere this week). Check "Include patients visited in the last 30 days" to override.`
+        ? `All patients in ${group2 ? 'those groups' : 'that group'} were visited within the last month (or already used elsewhere this week). Check "Include patients seen within the last month" to override.`
         : `No geocoded patients in ${group2 ? 'those groups' : 'that group'} yet.` };
     }
     pool = groupPatients;
@@ -1948,7 +1973,7 @@ function selectRoutePatients({ group, group2, stopCount, startCoords, scheduleDa
     pool = eligible;
     if (pool.length === 0) {
       return { error: excludedCount > 0
-        ? `All eligible patients were visited within the last 30 days (or already used elsewhere this week). Check "Include patients visited in the last 30 days" to override.`
+        ? `All eligible patients were visited within the last month (or already used elsewhere this week). Check "Include patients seen within the last month" to override.`
         : 'No geocoded patients available yet.' };
     }
   }
@@ -2341,7 +2366,7 @@ function renderWeekResults() {
       `;
     }
     const fillNote = day.fillCount > 0 ? ` — ${day.fillCount} pulled from nearby groups to fill the count` : '';
-    const excludedNote = day.excludedCount > 0 ? ` — ${day.excludedCount} excluded (visited &lt;30 days)` : '';
+    const excludedNote = day.excludedCount > 0 ? ` — ${day.excludedCount} excluded (not yet due)` : '';
     const returnTimeNote = day.returnTimeException ? `
       <div style="margin-top:10px; padding:10px; border-radius:var(--radius-sm); border:1px solid var(--pink-deep); background:rgba(238,126,171,0.1);">
         <p style="margin:0; font-size:0.85rem; color:var(--pink-deep); font-weight:700;">‼️ Today you'll be home past ${minutesToClock(day.returnTimeTarget)} — everyone at one address had to stay together and alone that visit runs past your target return time.</p>
