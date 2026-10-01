@@ -4129,7 +4129,15 @@ async function recalcDayReview() {
 
   renderDayReviewSummary();
   renderDayReviewList();
-  renderDayReviewMap();
+  try {
+    renderDayReviewMap();
+  } catch (e) {
+    // The map is a visual aid inside an already-committed data update above
+    // — a rendering hiccup here (tile load, Leaflet init) should never be
+    // able to abort whatever the caller does after awaiting this, the same
+    // fragility already fixed once for regroup()'s own map redraw.
+    console.error('Day Review map failed to render (the day\'s data is unaffected)', e);
+  }
 }
 
 function renderDayReviewSummary() {
