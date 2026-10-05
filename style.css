@@ -339,10 +339,18 @@ body {
     height: auto;
     position: relative;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
-    overflow-x: auto;
+    overflow-x: auto; /* safety net only — wrapping below is what actually keeps everything reachable */
   }
-  .nav-tabs { flex-direction: row; }
+  /* Previously this whole sidebar (nav tabs, filters, theme picker, log
+     out) was forced into one unbroken scrolling row with no hint that
+     more existed off-screen — "About", Admin, even Log out could end up
+     invisible unless you happened to swipe. Wrapping means every control
+     is always on screen somewhere, never hidden behind a silent scroll. */
+  .nav-tabs { flex-direction: row; flex-wrap: wrap; flex: 1 1 auto; }
+  .sidebar > .field { flex: 0 1 170px; }
+  .sidebar .auth-user-row { flex-direction: row; align-items: center; gap: 10px; margin-left: auto; }
 }
 
 .brand-name {
